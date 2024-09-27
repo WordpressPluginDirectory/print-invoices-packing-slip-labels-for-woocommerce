@@ -17,10 +17,10 @@ if(!is_plugin_active($pro_invoice_path)){
     $pro_installed = false;
     $invoice_pro_feature_list = array(
         __("Multiple premium invoice templates to choose from","print-invoices-packing-slip-labels-for-woocommerce"),
+        __("Add custom data like product meta, order meta, attributes etc","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Enable customers to Pay Later at checkout","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Collect payments with a payment link on the invoice","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Show different taxes in separate columns","print-invoices-packing-slip-labels-for-woocommerce"),
-        __("Add product meta fields & attributes to invoices","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Group products by category","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Sort order items in the product table ","print-invoices-packing-slip-labels-for-woocommerce"),
         __("Show variation data for variable products","print-invoices-packing-slip-labels-for-woocommerce"),
@@ -56,7 +56,15 @@ if(!is_plugin_active($pro_invoice_path)){
         <div class="wt_pro_addon_tile_doc" style="<?php echo is_rtl() ? 'left:0;' : 'right:0;'; ?>">
             <div class="wt_pro_addon_widget_doc">
                 <div class="wt_pro_addon_widget_wrapper_doc">
-                    <p style="font-size:14px;"><?php _e("You are currently on the basic version of the invoice module. Checkout our premium features.","print-invoices-packing-slip-labels-for-woocommerce"); ?></p>
+                    <p><?php _e('Get advanced features for your','print-invoices-packing-slip-labels-for-woocommerce'); ?></p>
+                    <div class="wt_pro_addon_widget_wrapper_doc_logo_title">
+                        <div class="wt_pro_addon_widget_wrapper_doc_logo_title_col_1">
+                            <img src="<?php echo esc_url(WF_PKLIST_PLUGIN_URL . 'admin/images/wt_ipc_logo.png'); ?>">
+                        </div>
+                        <div class="wt_pro_addon_widget_wrapper_doc_logo_title_col_2">
+                            <h4><?php echo __("Invoices, Packing slips and Credit notes","print-invoices-packing-slip-labels-for-woocommerce"); ?></h4>
+                        </div>
+                    </div>
                 </div>
                 <div class="wt_pro_addon_features_list_doc">
                     <ul>
@@ -74,7 +82,7 @@ if(!is_plugin_active($pro_invoice_path)){
                     <a class="wt_pro_addon_show_less_doc"><p><? echo __("Show Less","print-invoices-packing-slip-labels-for-woocommerce"); ?></p></a>
                 </div>
                 <a class="wt_pro_addon_premium_link_div_doc" href="<?php echo esc_url($sidebar_pro_link); ?>" target="_blank">
-                    <?php _e("Checkout Premium","print-invoices-packing-slip-labels-for-woocommerce"); ?> <span class="dashicons dashicons-arrow-right-alt"></span>
+                    <?php _e("View add-on","print-invoices-packing-slip-labels-for-woocommerce"); ?> <span class="dashicons dashicons-arrow-right-alt"></span>
                 </a>
             </div>
         </div>
@@ -101,5 +109,6 @@ if(!is_plugin_active($pro_invoice_path)){
         <?php do_action('wf_pklist_module_out_settings_form',array(
             'module_id'=>$this->module_base
         ));?>
+        <?php include_once WF_PKLIST_PLUGIN_PATH . 'admin/views/customizer-promotion-popup.php'; ?>
     </div>
 </div>

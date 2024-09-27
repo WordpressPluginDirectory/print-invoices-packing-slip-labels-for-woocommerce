@@ -24,7 +24,7 @@ $pro_installed = false;
 <?php
 }
 ?>
-<div class="wrap wt_wrap" style="float: initial;">
+<div class="wt_wrap" style="float: initial;">
     <div class="wt_heading_section">
         <h2 class="wp-heading-inline">
         <?php _e('Settings','print-invoices-packing-slip-labels-for-woocommerce');?>: <?php _e('Shipping label','print-invoices-packing-slip-labels-for-woocommerce');?>
@@ -52,6 +52,7 @@ $pro_installed = false;
         <?php do_action('wf_pklist_module_out_settings_form',array(
             'module_id'=>$this->module_base
         ));?>
+        <?php include_once WF_PKLIST_PLUGIN_PATH . 'admin/views/customizer-promotion-popup.php'; ?>
         <?php
         if(false === $pro_installed){
             $sidebar_pro_link = 'https://www.webtoffee.com/product/woocommerce-shipping-labels-delivery-notes/?utm_source=free_plugin_sidebar&utm_medium=pdf_basic&utm_campaign=Shipping_Label&utm_content='.WF_PKLIST_VERSION;
@@ -72,7 +73,15 @@ $pro_installed = false;
             <div class="wt_pro_addon_tile_doc" style="<?php echo is_rtl() ? 'left:0;' : 'right:0;'; ?>">
                 <div class="wt_pro_addon_widget_doc">
                     <div class="wt_pro_addon_widget_wrapper_doc">
-                    <p style="font-size:14px;"><?php _e("You are currently on the basic version of the shipping label module. Checkout our premium features.","print-invoices-packing-slip-labels-for-woocommerce"); ?></p>
+                        <p><?php _e('Get advanced features for your','print-invoices-packing-slip-labels-for-woocommerce'); ?></p>
+                        <div class="wt_pro_addon_widget_wrapper_doc_logo_title">
+                            <div class="wt_pro_addon_widget_wrapper_doc_logo_title_col_1">
+                                <img src="<?php echo esc_url(WF_PKLIST_PLUGIN_URL . 'admin/images/wt_sdd_logo.png'); ?>">
+                            </div>
+                            <div class="wt_pro_addon_widget_wrapper_doc_logo_title_col_2">
+                                <h4><?php echo __("Shipping labels, Dispatch labels and Delivery notes","print-invoices-packing-slip-labels-for-woocommerce"); ?></h4>
+                            </div>
+                        </div>
                     </div>
                     <div class="wt_pro_addon_features_list_doc">
                         <ul>
@@ -90,7 +99,7 @@ $pro_installed = false;
                         <a class="wt_pro_addon_show_less_doc"><p><? echo __("Show Less","print-invoices-packing-slip-labels-for-woocommerce"); ?></p></a>
                     </div>
                     <a class="wt_pro_addon_premium_link_div_doc" href="<?php echo esc_url($sidebar_pro_link); ?>" target="_blank">
-                        <?php _e("Checkout Premium","print-invoices-packing-slip-labels-for-woocommerce"); ?> <span class="dashicons dashicons-arrow-right-alt"></span>
+                        <?php _e("View add-on","print-invoices-packing-slip-labels-for-woocommerce"); ?> <span class="dashicons dashicons-arrow-right-alt"></span>
                     </a>
                 </div>
             </div>

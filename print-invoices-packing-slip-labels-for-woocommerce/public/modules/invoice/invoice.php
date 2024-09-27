@@ -63,6 +63,7 @@ class Wf_Woocommerce_Packing_List_Invoice
 			add_filter('wt_email_print_actions',array($this,'add_email_print_buttons'),10,3);
 			add_filter('wt_email_attachments',array($this,'add_email_attachments'),10,4);
 			add_action('woocommerce_thankyou',array($this,'generate_invoice_number_on_order_creation'),10,1);
+			add_action('woocommerce_new_order',array($this,'generate_invoice_number_on_order_pending'),10,1);
 			add_action('woocommerce_order_status_changed',array($this,'generate_invoice_number_on_status_change'),10,3);
 			add_filter('wt_pklist_individual_print_button_for_document_types',array($this,'add_individual_print_button_in_admin_order_listing_page'),10,1);
 			add_filter('woocommerce_admin_order_actions_end',array($this,'document_print_btn_on_wc_order_listing_action_column'),10,1);
@@ -110,6 +111,8 @@ class Wf_Woocommerce_Packing_List_Invoice
 		add_action('wt_pklist_auto_generate_invoice_number_module',array($this,'generate_auto_invoice_number'),10);
 
 		add_action('wt_pklist_update_settings_module_wise_on_update',array($this,'invoice_settings_on_plugin_update'),10);
+
+		add_filter( 'wt_pklist_get_plugin_data', array( $this, 'get_plugin_data' ),10,2 );
 	}
 	
 	/**
@@ -297,6 +300,9 @@ class Wf_Woocommerce_Packing_List_Invoice
 			if("received_seal" === $type)
 			{
 				$info_text=sprintf(__('You can control the visibility of the seal according to order status via filters. See filter documentation %s here. %s', 'print-invoices-packing-slip-labels-for-woocommerce'), '<a href="'.admin_url('admin.php?page=wf_woocommerce_packing_list#help#filters').'" target="_blank">', '</a>');
+				if ( Wf_Woocommerce_Packing_List_Admin::check_if_mpdf_used() ) {
+					$info_text .= '<span style="color:red;">'. __( 'This feature might not work in mPDF.', 'print-invoices-packing-slip-labels-for-woocommerce' ) .'</span>';
+				}
 			}
 		}
 		return $info_text;
@@ -497,6 +503,32 @@ class Wf_Woocommerce_Packing_List_Invoice
 			}
 		}
 	}
+
+	/**
+	 * @since 4.6.1
+	 * Generate the invoice number when the order status of a new order is 'pending'.
+	 * This is necessary because the 'woocommerce_thankyou' hook is not triggered when the order status is 'pending'.
+	 */
+	public function generate_invoice_number_on_order_pending($order_id) {
+		if ( ! $order_id ) {
+			return; 
+		}
+	
+		$order = wc_get_order($order_id);
+		$status = $order->get_status();
+	
+		if ( 'pending' !== $status ) {
+			return;
+		}
+	
+		$generate_invoice_for = Wf_Woocommerce_Packing_List::get_option('woocommerce_wf_generate_for_orderstatus', $this->module_id);
+	
+		if ( in_array('wc-' . $status, $generate_invoice_for) && 'pending' === $status ) {
+			$this->generate_invoice_number_on_order_creation($order_id);
+		}
+	}
+
+
 	/**
 	 *  Items needed to be converted to design view for the customizer screen
 	 */
@@ -1024,6 +1056,11 @@ class Wf_Woocommerce_Packing_List_Invoice
     {	
     	$order_id = (WC()->version < '2.7.0') ? $order->id : $order->get_id();
 	    $wf_invoice_id = Wt_Pklist_Common::get_order_meta($order_id, 'wf_invoice_number', true);
+		
+		if( !empty( $wf_invoice_id ) ) {
+			return $wf_invoice_id;
+		}
+
 	    if((empty($wf_invoice_id)) && ("set" !== $free_ord)){
 	    	$free_order_enable = Wf_Woocommerce_Packing_List::get_option('wf_woocommerce_invoice_free_orders',self::$module_id_static);
 			if("No" === $free_order_enable){
@@ -1150,8 +1187,8 @@ class Wf_Woocommerce_Packing_List_Invoice
 		$is_pro_customizer = apply_filters('wt_pklist_pro_customizer_'.$this->module_base,false,$this->module_base);
 		if($base_id === $this->module_id)
 		{
-			$only_pro_html='<span style="color:red;"> ('.__('Pro version','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
-			$only_pro_addon_html='<span style="color:red;"> ('.__('Pro Add-on','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
+			$only_pro_html='<span class="wt_customizer_pro_text" style="color:red;"> ('.__('Pro version','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
+			$only_pro_addon_html='<span class="wt_customizer_pro_text" style="color:red;"> ('.__('Pro Add-on','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
 			//these fields are the classname in template Eg: `company_logo` will point to `wfte_company_logo`
 			
 			$settings = array(
@@ -1186,25 +1223,21 @@ class Wf_Woocommerce_Packing_List_Invoice
 				$settings['footer'] = __('Footer','print-invoices-packing-slip-labels-for-woocommerce');
 			}
 			
-
-			$pro_features = array(
-				'tracking_number_disabled'=>__('Tracking Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_subtotal_disabled'=>__('Subtotal','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_shipping_disabled'=>__('Shipping','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_cart_discount_disabled'=>__('Cart Discount','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_order_discount_disabled'=>__('Order Discount','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_total_tax_disabled'=>__('Total Tax','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_fee_disabled'=>__('Fee','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_coupon_disabled'=>__('Coupon info','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_payment_method_disabled'=>__('Payment Method','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'product_table_payment_total_disabled'=>__('Total','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-			);
-			
-
-			$settings = array_merge($settings, $pro_features);
-
-			//these fields are the classname in template Eg: `company_logo` will point to `wfte_company_logo`
-			return $settings;
+			if ( false === $is_pro_customizer ) {
+				$pro_features = array(
+					'tracking_number_pro_element'=>__('Tracking Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_subtotal_pro_element'=>__('Subtotal','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_shipping_pro_element'=>__('Shipping','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_cart_discount_pro_element'=>__('Cart Discount','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_order_discount_pro_element'=>__('Order Discount','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_total_tax_pro_element'=>__('Total Tax','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_fee_pro_element'=>__('Fee','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_coupon_pro_element'=>__('Coupon info','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_payment_method_pro_element'=>__('Payment Method','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+					'product_table_payment_total_pro_element'=>__('Total','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+				);
+				$settings = array_merge($settings, $pro_features);
+			}
 		}
 		return $settings;
 	}
@@ -1255,7 +1288,7 @@ class Wf_Woocommerce_Packing_List_Invoice
 		if($base_id === $this->module_id)
 		{
 			$settings = array(
-	        	'woocommerce_wf_generate_for_orderstatus'=>array('wc-completed'),
+	        	'woocommerce_wf_generate_for_orderstatus'=>array('wc-completed','wc-processing'),
 	        	'woocommerce_wf_attach_invoice'=>array(),
 	        	'woocommerce_wf_packinglist_logo'=>'',
 	        	'woocommerce_wf_add_invoice_in_mail'=>'No',
@@ -1533,7 +1566,7 @@ class Wf_Woocommerce_Packing_List_Invoice
 				$show_print_button_for=Wf_Woocommerce_Packing_List::get_option('woocommerce_wf_generate_for_orderstatus',$this->module_id);
 		        if("" !== trim($wf_invoice_id) || in_array('wc-'.$order->get_status(),$show_print_button_for))
 		        {
-					$email_btn_label	= apply_filters('wt_pklist_alter_document_button_label',$this->print_btn_label,'print','email',$template_type);
+					$email_btn_label	= apply_filters('wt_pklist_alter_document_button_label',__($this->print_btn_label,'print-invoices-packing-slip-labels-for-woocommerce'),'print','email',$template_type);
 		            Wf_Woocommerce_Packing_List::generate_print_button_for_user($order,$order_id,'print_invoice',$email_btn_label,true); 
 		        }
 		    }
@@ -1566,10 +1599,17 @@ class Wf_Woocommerce_Packing_List_Invoice
 	    		$wf_invoice_id = Wt_Pklist_Common::get_order_meta($order_id, 'wf_invoice_number', true);
 				$generate_invoice_for=Wf_Woocommerce_Packing_List::get_option('woocommerce_wf_generate_for_orderstatus',$this->module_id);
 				if("" !== trim($wf_invoice_id) || in_array('wc-'.$order->get_status(),$generate_invoice_for)){
-					$print_btn_label	= apply_filters('wt_pklist_alter_document_button_label',$this->print_btn_label,'print','my_account_order_details',$template_type);
-					$download_btn_label	= apply_filters('wt_pklist_alter_document_button_label',$this->download_btn_label,'download','my_account_order_details',$template_type);
-					Wf_Woocommerce_Packing_List::generate_print_button_for_user($order,$order_id,'print_invoice',$print_btn_label);
-					Wf_Woocommerce_Packing_List::generate_print_button_for_user($order,$order_id,'download_invoice',$download_btn_label);
+					$print_btn_label	= apply_filters('wt_pklist_alter_document_button_label',__($this->print_btn_label,'print-invoices-packing-slip-labels-for-woocommerce'),'print','my_account_order_details',$template_type);
+					$download_btn_label	= apply_filters('wt_pklist_alter_document_button_label',__($this->download_btn_label,'print-invoices-packing-slip-labels-for-woocommerce'),'download','my_account_order_details',$template_type);
+					
+					if( true === apply_filters('wt_pklist_show_document_button',true,'print','my_account_order_details',$template_type,$order) ) {
+						Wf_Woocommerce_Packing_List::generate_print_button_for_user($order,$order_id,'print_invoice',$print_btn_label);
+					}
+					
+					if( true === apply_filters('wt_pklist_show_document_button',true,'download','my_account_order_details',$template_type,$order) ) {
+						Wf_Woocommerce_Packing_List::generate_print_button_for_user($order,$order_id,'download_invoice',$download_btn_label);
+					}
+					
 				}
 			}
 		}
@@ -1585,8 +1625,8 @@ class Wf_Woocommerce_Packing_List_Invoice
 		if($this->is_show_frontend_print_button($order))
 		{
 			$wt_actions[$this->module_base]=array(
-				'print'		=> apply_filters('wt_pklist_alter_document_button_label',$this->print_btn_label,'print','my_account_order_listing',$this->module_base),
-				'download'	=> apply_filters('wt_pklist_alter_document_button_label',$this->download_btn_label,'download','my_account_order_listing',$this->module_base),
+				'print'		=> apply_filters('wt_pklist_alter_document_button_label',__($this->print_btn_label, 'print-invoices-packing-slip-labels-for-woocommerce' ),'print','my_account_order_listing',$this->module_base),
+				'download'	=> apply_filters('wt_pklist_alter_document_button_label',__($this->download_btn_label, 'print-invoices-packing-slip-labels-for-woocommerce'),'download','my_account_order_listing',$this->module_base),
 			);
 		}
 		return $wt_actions;
@@ -1647,9 +1687,17 @@ class Wf_Woocommerce_Packing_List_Invoice
     		if(!is_array($order_ids))
     		{
     			return;
-    		}    
+    		}
+
 	        if(!is_null($this->customizer))
 	        {
+				if( count( $order_ids ) > 1 ) {
+					$sort_order = apply_filters( 'wt_pklist_sort_orders', 'desc', $this->module_base, $action ); // To choose the sorting of the orders when doing bulk print or download.
+					if ( 'asc' ===  $sort_order ) {
+						sort( $order_ids );
+					}
+				}
+
 				$pdf_name=$this->customizer->generate_pdf_name($this->module_base, $order_ids);
 	        	if("download_invoice" === $action || "preview_invoice" === $action)
 	        	{
@@ -1708,9 +1756,13 @@ class Wf_Woocommerce_Packing_List_Invoice
     		$document_created = Wf_Woocommerce_Packing_List_Admin::created_document_count($order_id,$template_type);
     	}
 
-		// bulk download page break
-		if($number_of_orders>1)
-		{
+		
+		/**
+		 * bulk download page break
+		 * @since 4.5.1 - [Fix] - mPDF library shows empty pages.
+		 * @since 4.5.2 - [Fix] - The second order over rides to the first page (a4) when bulk printing.
+		 */
+		if( 1 < $number_of_orders && ( "print_invoice" === $action || false === Wf_Woocommerce_Packing_List_Admin::check_if_mpdf_used() ) ) {
 			$out	= str_replace('</body>','<div class="pagebreak"></div></body>',$out);
 		}
 		
@@ -1721,6 +1773,11 @@ class Wf_Woocommerce_Packing_List_Invoice
     	$use_latest_settings_invoice	= Wf_Woocommerce_Packing_List::get_option('woocommerce_wt_use_latest_settings_invoice', $this->module_id);
     	$template_type	= $this->module_base;
     	$order			= Wt_Pklist_Common::get_order($order_id);
+		/**
+		 * @since 4.6.0 - Added filter to add before preparing the order package and rendering the html.
+		 */
+		$pdf_filters = apply_filters( 'wt_pklist_add_filters_before_rendering_pdf', array(), $this->module_base, $order );
+		Wt_Pklist_Common::wt_pklist_pdf_add_filters( $pdf_filters );
 		$invoice_html 	= Wt_Pklist_Common::get_order_meta($order_id, 'wf_invoice_html', true);
 		$order_id_arr[] = $order_id;
 		$pdf_name		= $this->customizer->generate_pdf_name($this->module_base, $order_id_arr);
@@ -1835,6 +1892,12 @@ class Wf_Woocommerce_Packing_List_Invoice
 				Wt_Pklist_Common::update_order_meta($order_id,'wf_invoice_html',$file_name);
 	        }
 		}
+		
+		/**
+		 * @since 4.6.0 - Remove the filters which were added before preparing the order package and rendering the html.
+		 */
+		Wt_Pklist_Common::wt_pklist_pdf_remove_filters( $pdf_filters );
+		
 		return $out;
     }
 
@@ -1852,9 +1915,6 @@ class Wf_Woocommerce_Packing_List_Invoice
     	if("" !== $html)
     	{
     		$number_of_orders=count($orders);
-			if($number_of_orders > 1){
-				sort($orders);
-			}
 			$order_inc=0;
 			foreach($orders as $order_id)
 			{
@@ -1924,7 +1984,7 @@ class Wf_Woocommerce_Packing_List_Invoice
 	 * @return void
 	 */
 	public function document_print_btn_on_wc_order_listing_action_column( $order ) {
-		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column',true,$this->module_base);
+		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column_free', true, $this->module_base, $order);
 
 		if( !empty( $order ) && true === $show_print_button ) {
 			$order_id	= ( WC()->version < '2.7.0' ) ? $order->id : $order->get_id();
@@ -1933,8 +1993,10 @@ class Wf_Woocommerce_Packing_List_Invoice
 				$invoice_number		= Wt_Pklist_Common::get_order_meta( $order_id, 'wf_invoice_number', true );
 				$btn_action_name 	= 'wt_pklist_print_document_'.$this->module_base;
 				$img_url 			= WF_PKLIST_PLUGIN_URL . 'admin/images/'.$this->module_base.'_logo.png';
+				$invoice_no_set = true;
 				
 				if( empty( $invoice_number ) ) {
+					$invoice_no_set = false;
 					$btn_action_name	= $btn_action_name.'_not_yet';
 					$img_url 			= WF_PKLIST_PLUGIN_URL . 'admin/images/'.$this->module_base.'.png';
 				}
@@ -1945,7 +2007,22 @@ class Wf_Woocommerce_Packing_List_Invoice
 					$this->module_title,
 					);
 				$print_url		= Wf_Woocommerce_Packing_List_Admin::get_print_url($order_id,$action);
-				echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'" ></a>';
+				
+				if ( true === $invoice_no_set ) {
+					echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn wt_pklist_admin_print_document_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'" ></a>';
+				} else {
+					$is_show_prompt = 1;
+					$free_order_enable = Wf_Woocommerce_Packing_List::get_option( 'wf_woocommerce_invoice_free_orders',$this->module_id );
+
+					if ( "No" === $free_order_enable ) {
+						if ( 0 === \intval ( $order->get_total() ) ){
+							$is_show_prompt = 2;
+						}
+					}
+                    $onlick = "return wf_Confirm_Notice_for_Manually_Creating_Invoicenumbers('".esc_url_raw($print_url)."',$is_show_prompt)";
+                    echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn" onclick="'.$onlick.'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'" ></a>';
+                    echo '<a class="wt_pklist_empty_number" data-template-type="'.esc_attr($this->module_base).'" data-id="'.esc_attr($order_id).'" style="display:none;"></a>';
+                }		
 			}
 		}
 	}
@@ -1972,6 +2049,18 @@ class Wf_Woocommerce_Packing_List_Invoice
 		{
 			Wf_Woocommerce_Packing_List::update_option('woocommerce_wf_invoice_number_postfix','',$this->module_id);
 		}
+	}
+
+	/**
+	 * Get the saved data of the invoice module
+	 *
+	 * @since 4.5.0
+	 * @param array $plugin_data
+	 * @param string $page
+	 * @return array
+	 */
+	public function get_plugin_data( $plugin_data, $page ) {
+		return ( $this->module_id === $page ) ? array( $this->module_base =>  get_option( $this->module_id ) ) : $plugin_data;
 	}
 }
 new Wf_Woocommerce_Packing_List_Invoice();

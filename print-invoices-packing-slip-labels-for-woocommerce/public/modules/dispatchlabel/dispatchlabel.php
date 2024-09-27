@@ -278,6 +278,13 @@ class Wf_Woocommerce_Packing_List_Dispatchlabel
 	    		}    
 		        if(!is_null($this->customizer))
 		        {
+					if( count( $order_ids ) > 1 ) {
+						$sort_order = apply_filters( 'wt_pklist_sort_orders', 'desc', $this->module_base, $action ); // To choose the sorting of the orders when doing bulk print or download.
+						if ( 'asc' ===  $sort_order ) {
+							sort( $order_ids );
+						}
+					}
+					
 		        	$pdf_name=$this->customizer->generate_pdf_name($this->module_base,$order_ids);
 		        	$this->customizer->template_for_pdf=false;	        	
 		        	$html=$this->generate_order_template($order_ids,$pdf_name);
@@ -303,6 +310,13 @@ class Wf_Woocommerce_Packing_List_Dispatchlabel
 			{
 				$order_inc++;
 				$order=( WC()->version < '2.7.0' ) ? new WC_Order($order_id) : new wf_order($order_id);
+
+				/**
+				 * @since 4.6.0 - Added filter to add before preparing the order package and rendering the html.
+				 */
+				$pdf_filters = apply_filters( 'wt_pklist_add_filters_before_rendering_pdf', array(), $this->module_base, $order );
+				Wt_Pklist_Common::wt_pklist_pdf_add_filters( $pdf_filters );
+				
 				$out.=$this->customizer->generate_template_html($html,$template_type,$order);
 				$document_created = Wf_Woocommerce_Packing_List_Admin::created_document_count($order_id,$template_type);
 				if($number_of_orders>1 && $order_inc<$number_of_orders)
@@ -312,6 +326,11 @@ class Wf_Woocommerce_Packing_List_Dispatchlabel
 	            {
 	                //$out.='<p class="no-page-break"></p>';
 	            }
+
+				/**
+				 * @since 4.6.0 - Remove the filters which were added before preparing the order package and rendering the html.
+				 */
+				Wt_Pklist_Common::wt_pklist_pdf_remove_filters( $pdf_filters );
 			}
 			$out=$this->customizer->append_style_blocks($out,$style_blocks);
 			$out=$this->customizer->append_header_and_footer_html($out,$template_type,$page_title);
@@ -340,7 +359,7 @@ class Wf_Woocommerce_Packing_List_Dispatchlabel
 	 * @return void
 	 */
 	public function document_print_btn_on_wc_order_listing_action_column( $order ) {
-		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column',true,$this->module_base);
+		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column_free', true, $this->module_base, $order);
 		
 		if( !empty( $order ) && true === $show_print_button ) {
 			$order_id	= ( WC()->version < '2.7.0' ) ? $order->id : $order->get_id();
@@ -372,7 +391,7 @@ class Wf_Woocommerce_Packing_List_Dispatchlabel
 					$this->module_title,
 					);
 				$print_url		= Wf_Woocommerce_Packing_List_Admin::get_print_url($order_id,$action);
-				echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'" ></a>';
+				echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn wt_pklist_admin_print_document_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'" ></a>';
 			}
 		}
 	}

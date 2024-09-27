@@ -116,8 +116,8 @@ class Wf_Woocommerce_Packing_List {
 			self::$base_version = WF_PKLIST_VERSION;
 		}else 
 		{
-			$this->version = '4.3.1';
-			self::$base_version = '4.3.1';
+			$this->version = '4.6.2';
+			self::$base_version = '4.6.2';
 		}
 		if(defined('WF_PKLIST_PLUGIN_NAME'))
 		{
@@ -352,7 +352,7 @@ class Wf_Woocommerce_Packing_List {
 		
 		$this->loader->add_filter('woocommerce_checkout_fields',$this->plugin_admin,'add_checkout_fields'); /* Add additional checkout fields */		
 
-		$this->loader->add_action('init',$this->plugin_admin,'print_window',10); /* to print the invoice and packinglist */
+		$this->loader->add_action('init',$this->plugin_admin,'print_window',11); /* to print the invoice and packinglist */
 
 		$this->plugin_admin->admin_modules();
 		$this->plugin_public->common_modules();
@@ -393,15 +393,25 @@ class Wf_Woocommerce_Packing_List {
 		
 		//ajax hook for saving settings from the form wizard
 		$this->loader->add_action('wp_ajax_wt_pklist_form_wizard_save', $this->plugin_admin, 'wt_pklist_form_wizard_save');
-		$this->loader->add_action('woocommerce_settings_save_tax',$this->plugin_admin,'update_plugin_settings_when_wc_update_settings');
+		$this->loader->add_action('woocommerce_settings_saved',$this->plugin_admin,'update_plugin_settings_when_wc_update_settings');
 		$this->loader->add_action( 'woocommerce_checkout_update_order_meta', $this, 'save_order_language_code' );
 		$this->loader->add_action( 'woocommerce_store_api_checkout_order_processed', $this, 'save_order_language_code' ); // Checkout block
+
+		
 		/**
 		 *  Set screens to show promotional banner 
 		 * 
 		 *  @since 4.2.1
 		 */
 		$this->loader->add_filter( "wt_promotion_banner_screens", $this->plugin_admin, "wt_promotion_banner_screens" );
+
+		/**
+		 * Update the version migrated values when updating the settings.
+		 *
+		 * @since 4.6.1
+		 */
+		$this->loader->add_filter( 'wt_pklist_add_filters_before_rendering_pdf', $this->plugin_admin, 'pdf_before_rendering_filters', 10, 3 );
+		$this->loader->add_action( 'wf_pklist_intl_after_setting_update', $this->plugin_admin, 'update_plugin_settings_with_migration', 10, 2 );
 	}
 
 	private function define_common_hooks() {
@@ -525,7 +535,7 @@ class Wf_Woocommerce_Packing_List {
     }
 
 	/**
-	 * Get the print button in order email
+	 * Get the print button in order email and order details page in my account
 	 *
 	 * @param object $order
 	 * @param int|string $order_id
@@ -547,12 +557,13 @@ class Wf_Woocommerce_Packing_List {
 				'_wpnonce'			=> wp_create_nonce(WF_PKLIST_PLUGIN_NAME),
 				'lang'				=> get_locale(),
 				'access_key'    	=> $order->get_order_key(),
-			), home_url() );
+				'button_location'	=> true === $email_button ? 'email' : 'order_details',
+			), site_url() );
 			$invoice_url	= esc_url_raw($document_link);
 			$style			= '';
-			$email_button_class = '';
+			$button_class = '';
 			if( $email_button ) {
-				$email_button_class = 'wt_pklist_email_btn';
+				$button_class = 'wt_pklist_email_btn';
 				$template_type = ( false !== strpos( $action, 'print_' ) ) ? str_replace('print_','',$action) : '';
 				$style_arr = array(
 					'background'		=> '#0085ba',
@@ -569,8 +580,17 @@ class Wf_Woocommerce_Packing_List {
 						$style .= $style_key.':'.$style_value.';';
 					}
 				}
+			} else {
+				$template_type = str_replace(array('print_', 'download_'), '', $action);
+				if ( !empty( $template_type ) ) {
+					if ( false !== strpos( $action, 'print_' ) ) {
+						$button_class = 'wt_pklist_'.$template_type.'_print';
+					} else {
+						$button_class = 'wt_pklist_'.$template_type.'_download';
+					}
+				}
 			}
-			$button	= '<a class="button button-primary '.esc_attr( $email_button_class ).'" style="'.esc_attr($style).'" target="_blank" href="'.$invoice_url.'">'.wp_kses_post($label).'</a><br><br>';
+			$button	= '<a class="button button-primary '.esc_attr( $button_class ).'" style="'.esc_attr($style).'" target="_blank" href="'.$invoice_url.'">'.wp_kses_post($label).'</a><br><br>';
 			echo $button;
 		}
     }
@@ -599,7 +619,7 @@ class Wf_Woocommerce_Packing_List {
 				'_wpnonce'			=> wp_create_nonce(WF_PKLIST_PLUGIN_NAME),
 				'lang'				=> get_locale(),
 				'access_key'    	=> $order->get_order_key(),
-			), home_url() );
+			), site_url() );
 			return esc_url_raw($document_link);
 		}
 		return '';
@@ -610,12 +630,15 @@ class Wf_Woocommerce_Packing_List {
 	 * @since     2.5.0
 	 */
 	public static function default_settings( $base_id='' ) {
-		$wc_tax = !empty(get_option('woocommerce_prices_include_tax')) ? get_option('woocommerce_prices_include_tax') : 'no';
-		if("yes" === $wc_tax){
+		$wc_price_inc_tax 	= get_option('woocommerce_prices_include_tax');
+		$wc_tax_enable		= ! function_exists( 'wc_tax_enabled' ) ? apply_filters( 'wc_tax_enabled', get_option( 'woocommerce_calc_taxes' ) === 'yes' ) : wc_tax_enabled();
+
+		if ( $wc_tax_enable &&  "yes" === $wc_price_inc_tax ) {
 			$wt_tax = array('in_tax');
-		}else{
+		} else {
 			$wt_tax = array('ex_tax');
 		}
+		
 		$settings	= array(
 			'woocommerce_wf_packinglist_companyname'			=> '',
 			'woocommerce_wf_packinglist_logo'					=> '',
@@ -629,10 +652,10 @@ class Wf_Woocommerce_Packing_List {
 			'woocommerce_wf_packinglist_sender_contact_number'	=> '',
 			'woocommerce_wf_packinglist_sender_vat'				=> '',
 			'woocommerce_wf_state_code_disable'					=> 'no',
-			'woocommerce_wf_packinglist_preview'				=> 'enabled',
+			'woocommerce_wf_packinglist_preview'				=> 'No',
 			'woocommerce_wf_packinglist_package_type'			=> 'single_packing', //just keeping to avoid errors
 			'woocommerce_wf_packinglist_boxes'					=> array(),
-			'woocommerce_wf_add_rtl_support'					=> 'No',
+			'woocommerce_wf_add_rtl_support'					=> 'Yes',
 			'active_pdf_library'								=> 'dompdf',
 			'woocommerce_wf_generate_for_taxstatus'				=> $wt_tax,
 			'wf_additional_data_fields'							=> array(),
@@ -641,6 +664,8 @@ class Wf_Woocommerce_Packing_List {
 			'wt_pklist_print_button_access_for'					=> 'logged_in',
 			'wt_pklist_common_print_button_enable'				=> 'Yes',
 			'wt_pklist_separate_print_button_enable'			=> array('invoice','packinglist'),
+			'wt_pklist_show_currency_code'						=> 'No',
+			'wt_pklist_additional_currency_font_support'		=> 'No',
 		);
 		
 		$base_id	= ( "" === $base_id ) ? "main" : $base_id; // for the pro addons use
@@ -703,10 +728,12 @@ class Wf_Woocommerce_Packing_List {
 
 	public static function single_checkbox_fields($base_id='',$tab_name=''){
 		$settings['wt_main_general'] = array(
-			'woocommerce_wf_packinglist_preview' => 'disabled',
+			'woocommerce_wf_packinglist_preview' => 'No',
 			'woocommerce_wf_state_code_disable' => "no",
 			'woocommerce_wf_add_rtl_support' => "No",
 			'wt_pklist_common_print_button_enable' => 'No',
+			'wt_pklist_show_currency_code' => 'No',
+			'wt_pklist_additional_currency_font_support' => 'No',
 		);
 
 		$base_id = ("" === $base_id) ? "main" : $base_id; // for the pro addons use

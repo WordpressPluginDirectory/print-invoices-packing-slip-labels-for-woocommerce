@@ -445,7 +445,12 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 	*   Get tax inclusive text.
 	*/
 	public static function get_tax_incl_text( $template_type, $order, $text_for = 'total_price' ) {
-		$incl_tax_text = __( 'incl. tax', 'print-invoices-packing-slip-labels-for-woocommerce' );
+		if ( !empty( $order ) && !empty( $order->get_taxes() )  ) {
+			$incl_tax_text = __( 'incl. tax', 'print-invoices-packing-slip-labels-for-woocommerce' );
+		} else {
+			$incl_tax_text = '';
+		}
+		
 		return apply_filters( 'wf_pklist_alter_tax_inclusive_text', $incl_tax_text, $template_type, $order, $text_for );
 	}
 
@@ -646,28 +651,6 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 
 					//additional product meta
 					$addional_product_meta = '';
-					if ( isset( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) && is_array( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) && count( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) > 0 ) {
-						$selected_product_meta_arr = $the_options[ 'wf_' . $template_type . '_product_meta_fields' ];
-						$product_meta_arr          = Wf_Woocommerce_Packing_List::get_option( 'wf_product_meta_fields' );
-						if ( ! is_array( $product_meta_arr ) ) {
-							$product_meta_arr = array();
-						}
-						foreach ( $selected_product_meta_arr as $value ) {
-							if ( isset( $product_meta_arr[ $value ] ) ) {
-								$meta_data = get_post_meta( $product_id, $value, true );
-								if ( '' === $meta_data && $variation_id > 0 ) {
-									$meta_data = get_post_meta( $parent_id, $value, true );
-								}
-								if ( is_array( $meta_data ) ) {
-									$output_data = ( self::wf_is_multi( $meta_data ) ? '' : implode( ', ', $meta_data ) );
-								} else {
-									$output_data = $meta_data;
-								}
-								$addional_product_meta .= ( '' !== $output_data ) ? '<small>' . $product_meta_arr[ $value ] . ' : ' . $output_data . '</small><br>' : '';
-							}
-						}
-					}
-
 					/**
 					*   @since 3.0.5 Compatible with Extra product option (theme complete)
 					*/
@@ -686,7 +669,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 									$tmcart_option_name     = $epo['name'];
 									$tmcart_option_value    = $epo['value'];
 									$tmcart_option_price    = Wf_Woocommerce_Packing_List_Admin::wf_display_price( $user_currency, $order, $epo['price'] );
-									$tmcart_option_qty      = $epo['quantity'];
+									$tmcart_option_qty      = (float)$epo['quantity'];
 									$addional_product_meta .= '<small style="line-height:18px;"><span style="white-space: pre-wrap;">' . wp_kses_post( $tmcart_option_name ) . ' : ' . wp_kses_post( $tmcart_option_value ) . '</span><br><span style="white-space: pre-wrap;">Cost : ' . wp_kses_post( $tmcart_option_price ) . '</span><br><span style="white-space: pre-wrap;">Qty : ' . wp_kses_post( $tmcart_option_qty ) . '</span><br></small>';
 								}
 							}
@@ -728,7 +711,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				$column_data = Wf_Woocommerce_Packing_List_Admin::wf_display_price( $user_currency, $order, $col_unit_price );
 			} elseif ( 'total_price' === $columns_key || '-total_price' === $columns_key ) {
 				$item_price = Wf_Woocommerce_Packing_List_Admin::wf_convert_to_user_currency( $item['price'], $user_currency, $order );
-				$product_total = (int) $item['quantity'] * (float) $item_price;
+				$product_total	= (float) $item['quantity'] * (float) $item_price;
 				$currency        = get_woocommerce_currency();
 				$currency_symbol = get_woocommerce_currency_symbol( $currency );
 				if ( empty( $_product ) ) {
@@ -915,36 +898,6 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 							//additional product meta
 							$addional_product_meta  = '';
 							$meta_data_formated_arr = array();
-							if ( isset( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) && is_array( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) && count( $the_options[ 'wf_' . $template_type . '_product_meta_fields' ] ) > 0 ) {
-								$selected_product_meta_arr = $the_options[ 'wf_' . $template_type . '_product_meta_fields' ];
-								$product_meta_arr          = Wf_Woocommerce_Packing_List::get_option( 'wf_product_meta_fields' );
-								foreach ( $selected_product_meta_arr as $value ) {
-									if ( isset( $product_meta_arr[ $value ] ) ) {
-										$meta_data = get_post_meta( $product_id, $value, true );
-										if ( '' === $meta_data && $variation_id > 0 ) {
-											$meta_data = get_post_meta( $parent_id, $value, true );
-										}
-										if ( is_array( $meta_data ) ) {
-											$output_data = ( self::wf_is_multi( $meta_data ) ? '' : implode( ', ', $meta_data ) );
-										} else {
-											$output_data = $meta_data;
-										}
-
-										if ( '' !== $output_data ) {
-											$meta_info_arr = array(
-												'key'   => $value,
-												'title' => __( $product_meta_arr[ $value ], 'print-invoices-packing-slip-labels-for-woocommerce' ),
-												'value' => __( $output_data, 'print-invoices-packing-slip-labels-for-woocommerce' ),
-											);
-											$meta_info_arr = apply_filters( 'wf_pklist_alter_product_meta', $meta_info_arr, $template_type, $_product, $order_item, $order );
-											if ( is_array( $meta_info_arr ) && isset( $meta_info_arr['title'] ) && isset( $meta_info_arr['value'] ) && $meta_info_arr['value'] != '' ) {
-												$meta_data_formated_arr[] = '<span class="wt_pklist_product_meta_item" data-meta-id="' . esc_attr( $value ) . '"><label>' . wp_kses_post( $meta_info_arr['title'] ) . '</label> : ' . wp_kses_post( $meta_info_arr['value'] ) . '</span>';
-											}
-										}
-									}
-								}
-							}
-
 							/**
 							*   @since 2.8.0 Compatible with Extra product option (theme complete)
 							*/
@@ -963,7 +916,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 											$tmcart_option_name       = $epo['name'];
 											$tmcart_option_value      = $epo['value'];
 											$tmcart_option_price      = Wf_Woocommerce_Packing_List_Admin::wf_display_price( $user_currency, $order, $epo['price'] );
-											$tmcart_option_qty        = $epo['quantity'];
+											$tmcart_option_qty        = (float) $epo['quantity'];
 											$meta_data_formated_arr[] = '<small style="line-height:18px;"><span style="white-space: pre-wrap;">' . wp_kses_post( $tmcart_option_name ) . ' : ' . wp_kses_post( $tmcart_option_value ) . '</span><br><span style="white-space: pre-wrap;">Cost : ' . wp_kses_post( $tmcart_option_price ) . '</span><br><span style="white-space: pre-wrap;">Qty : ' . wp_kses_post( $tmcart_option_qty ) . '</span><br></small>';
 										}
 									}
@@ -1287,7 +1240,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				$find_replace['[wfte_weight]'] = __( 'n/a', 'print-invoices-packing-slip-labels-for-woocommerce' );
 				if ( $order_items ) {
 					foreach ( $order_items as $item ) {
-						$quantity = (int) $item->get_quantity(); // get quantity
+						$quantity = (float) $item->get_quantity(); // get quantity
 						$product  = $item->get_product(); // get the WC_Product object
 						if ( ! empty( $product ) ) {
 							$weight = (float) $product->get_weight(); // get the product weight
@@ -1315,12 +1268,17 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 		$module_id         = Wf_Woocommerce_Packing_List::get_module_id( $template_type );
 		if ( 'email' === $key ) {
 			$order_email = ( 0 === $wc_version ? $order->billing_email : $order->get_billing_email() );
-			return ( ! empty( $order_email ) ) ? $order_email : '';
+			return wp_kses_post( ! empty( $order_email ) ) ? $order_email : '';
 		}
 
 		if ( 'tel' === $key || 'contact_number' === $key ) {
-			$order_phone = ( 0 === $wc_version ? $order->billing_phone : $order->get_billing_phone() );
-			return ( ! empty( $order_phone ) ? $order_phone : '' );
+			if ( 'shippinglabel' === $template_type && "" !== ( ( WC()->version < '5.6.0' ) ? '' : $order->get_shipping_phone() ) ) {
+				$order_phone = $order->get_shipping_phone();
+			} else {
+				$order_phone = ( 0 === $wc_version ? $order->billing_phone : $order->get_billing_phone() );
+			}
+
+			return wp_kses_post( ! empty( $order_phone ) ? $order_phone : '' );
 		}
 
 		if ( 'customer_note' === $key || 'cust_note' === $key ) {
@@ -1328,7 +1286,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				return '';
 			}
 			$customer_note = ( 0 === $wc_version ? $order->customer_note : $order->get_customer_note() );
-			return ( ! empty( $customer_note ) ? $customer_note : '' );
+			return wp_kses_post( ! empty( $customer_note ) ? $customer_note : '' );
 		}
 
 		if ( 'ssn' === $key ) {
@@ -1336,7 +1294,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				return '';
 			}
 			$ssn_number = Wt_Pklist_Common::get_order_meta( $order_id, '_billing_ssn', true );
-			return ( ! empty( $ssn_number ) ? $ssn_number : '' );
+			return wp_kses_post( ! empty( $ssn_number ) ? $ssn_number : '' );
 		}
 
 		if ( 'vat' === $key ) {
@@ -1351,11 +1309,11 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				if ( empty( $res_vat ) ) {
 					$res_vat = Wt_Pklist_Common::get_order_meta( $order_id, $vat_val, true );
 				}
-				if ( ! empty( $res_vat ) && ! is_string( $res_vat ) ) {
+				if ( ! empty( $res_vat ) && is_string( $res_vat ) ) {
 					break;
 				}
 			}
-			return ( ! empty( $res_vat ) && is_string( $res_vat ) ) ? $res_vat : '';
+			return wp_kses_post( ! empty( $res_vat ) && is_string( $res_vat ) ) ? $res_vat : '';
 		}
 	}
 
@@ -1527,23 +1485,31 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 	 */
 	protected static function get_shipping_address( $template_type, $order = null ) {
 		if ( ! is_null( $order ) ) {
+			$order					= ( WC()->version < '2.7.0' ) ? new WC_Order( $order ) : new wf_order( $order );
+			$order_id				= ( WC()->version < '2.7.0' ) ? $order->id : $order->get_id();
+			$shipping_phone        	= ( WC()->version < '5.6.0' ) ? '' : Wt_Pklist_Common::get_order_meta( $order_id, '_shipping_phone', true );
+			if ( '' !== trim( $shipping_phone ) ) {
+				$shipping_phone_label = apply_filters( 'wt_pklist_alter_shipping_address_phone_number_label', '', $template_type, $order );
+				if ( !empty( $shipping_phone_label ) ) {
+					$shipping_phone = $shipping_phone_label . ' ' . $shipping_phone;  
+				}
+			}
 			if(!has_filter('wf_pklist_alter_shipping_address')){
-				return $order->get_formatted_shipping_address();
+				$wc_formatted_shipping_address = $order->get_formatted_shipping_address();
+				if ( '' !== trim( $shipping_phone ) ) {
+					$wc_formatted_shipping_address.='<br>'.$shipping_phone;
+				}
+				return $wc_formatted_shipping_address;
 			}
 
 			$the_options           = Wf_Woocommerce_Packing_List::get_settings();
-			$order                 = ( WC()->version < '2.7.0' ) ? new WC_Order( $order ) : new wf_order( $order );
-			$order_id              = ( WC()->version < '2.7.0' ) ? $order->id : $order->get_id();
+			
 			$shipping_address      = array();
 			$countries             = WC()->countries;
 			$shipping_country      = Wt_Pklist_Common::get_order_meta( $order_id, '_shipping_country', true );
 			$shipping_state        = Wt_Pklist_Common::get_order_meta( $order_id, '_shipping_state', true );
 			$shipping_state_full   = ( $shipping_country && $shipping_state && isset( $countries->states[ $shipping_country ][ $shipping_state ] ) ) ? $countries->states[ $shipping_country ][ $shipping_state ] : $shipping_state;
 			$shipping_country_full = ( $shipping_country && isset( $countries->countries[ $shipping_country ] ) ) ? $countries->countries[ $shipping_country ] : $shipping_country;
-			$shipping_phone        = ( WC()->version < '5.6.0' ) ? '' : Wt_Pklist_Common::get_order_meta( $order_id, '_shipping_phone', true );
-			if ( trim( $shipping_phone ) != '' ) {
-				$shipping_phone = __( 'Phone:', 'print-invoices-packing-slip-labels-for-woocommerce' ) . ' ' . $shipping_phone;
-			}
 			$shipping_address = array(
 				'first_name' => $order->shipping_first_name,
 				'last_name'  => $order->shipping_last_name,
@@ -1569,7 +1535,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 			if ( isset( $countries ) ) {
 				unset( $countries );
 			}
-			return implode( '<br />', $shipping_addr_vals );
+			return !empty( $shipping_addr_vals ) ? implode( '<br />', $shipping_addr_vals ) : '';
 		} else {
 			return '';
 		}
@@ -1587,9 +1553,26 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 	}
 	public static function set_shipping_address( $find_replace, $template_type, $order = null ) {
 		if ( ! is_null( $order ) ) {
-			$shipping_address                        = self::get_shipping_address( $template_type, $order );
-			$shipping_address                        = ( '' === trim( $shipping_address ) ) ? self::get_billing_address( $template_type, $order ) : $shipping_address;
-			$find_replace['[wfte_shipping_address]'] = $shipping_address;
+			/**
+			 * To hide the shipping address if the order has local pickup shipping method alone.
+			 * @since 4.4.1
+			 */
+			$show_shipping_address_for_local_pickup = Wt_Pklist_Common::has_order_local_pickup_only( $order );
+			if ( true === apply_filters('wt_pklist_hide_shipping_address_for_local_pickup', $show_shipping_address_for_local_pickup, $template_type, $order ) ) {
+				$find_replace['wfte_shipping_address_label'] = 'wfte_shipping_address_label wfte_hidden';
+				$find_replace['[wfte_shipping_address]'] = '';
+			} else {
+				$shipping_address	= self::get_shipping_address( $template_type, $order );
+				if( '' === trim( $shipping_address ) && true === apply_filters( 'wt_pklist_use_billing_address_as_shipping_address', false, $template_type, $order ) ) {
+					$shipping_address = self::get_billing_address( $template_type, $order );
+				}
+
+				if( empty( $shipping_address ) ) {
+					$find_replace['wfte_shipping_address_label'] = 'wfte_shipping_address_label wfte_hidden';
+				}
+				
+				$find_replace['[wfte_shipping_address]'] = $shipping_address;
+			}
 		} else {
 			$find_replace['[wfte_shipping_address]'] = '';
 		}
@@ -1641,7 +1624,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 			if ( isset( $countries ) ) {
 				unset( $countries );
 			}
-			return implode( '<br />', $billing_addr_vals );
+			return !empty( $billing_addr_vals ) ? implode( '<br />', $billing_addr_vals ) : '';
 		} else {
 			return '';
 		}
@@ -1649,6 +1632,9 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 	public static function set_billing_address( $find_replace, $template_type, $order = null ) {
 		if ( ! is_null( $order ) ) {
 			$billing_address                        = self::get_billing_address( $template_type, $order );
+			if( empty( $billing_address ) ) {
+				$find_replace['wfte_billing_address_label'] = 'wfte_billing_address_label wfte_hidden';
+			}
 			$find_replace['[wfte_billing_address]'] = $billing_address;
 		} else {
 			$find_replace['[wfte_billing_address]'] = '';
@@ -1689,7 +1675,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 		$find_replace['[wfte_from_address]']   = implode( '<br />', $from_addr_vals );
 		$find_replace['[wfte_return_address]'] = implode( '<br />', $return_addr_vals );	
 		
-		if(!has_filter('wf_pklist_alter_shipping_from_address')){
+		if(!has_filter('wf_pklist_alter_shipping_from_address')){ 
 			$from_address_params = array(
 				'first_name' => $the_options['woocommerce_wf_packinglist_sender_name'],
 				'last_name'  => '',
@@ -1701,7 +1687,14 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				'postcode'   => $the_options['woocommerce_wf_packinglist_sender_postalcode'],
 				'country'    => $country_code
 			);
+
 			$find_replace['[wfte_from_address]'] = WC()->countries->get_formatted_address( $from_address_params );
+			if( !empty( $the_options['woocommerce_wf_packinglist_sender_contact_number'] ) ) {
+				$find_replace['[wfte_from_address]'] .= '<br>'.$the_options['woocommerce_wf_packinglist_sender_contact_number'];
+			}
+			if( !empty( $the_options['woocommerce_wf_packinglist_sender_vat'] ) ) {
+				$find_replace['[wfte_from_address]'] .= '<br>'.$the_options['woocommerce_wf_packinglist_sender_vat'];
+			}
 		}
 
 		if(!has_filter('wf_pklist_alter_shipping_return_address')){
@@ -1716,7 +1709,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 				'postcode'   => $the_options['woocommerce_wf_packinglist_sender_postalcode'],
 				'country'    => $country_code
 			);
-			$find_replace['[wfte_return_address]'] = WC()->countries->get_formatted_address( $return_address_params );
+			$find_replace['[wfte_return_address]'] = WC()->countries->get_formatted_address( $return_address_params ).'<br>'.$the_options['woocommerce_wf_packinglist_sender_contact_number'];
 		}
 		
 		if ( isset( $countries ) ) {
@@ -1865,11 +1858,13 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 			'wfte_product_table_payment_method',
 			'wfte_customer_note',
 		);
-		$hide_on_empty_fields = apply_filters( 'wf_pklist_alter_hide_empty_from_pro', $hide_on_empty_fields );
-		$hide_on_empty_fields = apply_filters( 'wf_pklist_alter_hide_empty', $hide_on_empty_fields, $template_type );
+		$hide_on_empty_fields = apply_filters( 'wf_pklist_alter_hide_empty_from_pro', $hide_on_empty_fields ); // empty fields from premium add-ons.
+		$hide_on_empty_fields = apply_filters( 'wf_pklist_alter_hide_empty', $hide_on_empty_fields, $template_type ); // empty fields from free version.
+		$hide_on_empty_fields = apply_filters( 'wf_pklist_alter_hide_empty_from_html', $hide_on_empty_fields, $html, $template_type ); // empty fields from customizer add-on.
+
 		foreach ( $hide_on_empty_fields as $key => $value ) {
 			if ( isset( $find_replace[ '[' . $value . ']' ] ) ) {
-				if ( '' === $find_replace[ '[' . $value . ']' ] ) {
+				if ( '' === trim($find_replace[ '[' . $value . ']' ]) ) {
 					if ( 'wfte_company_logo_url' === $value ) {
 						$html = self::addClass( 'wfte_company_logo_img_box', $html, self::TO_HIDE_CSS );
 					} else {
@@ -1952,7 +1947,7 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 		$find_replace['[wfte_billing_address]'] = 'Billing address name <br>20 Maple Avenue <br>San Pedro <br>California <br>United States (US) <br>90731 <br>';
 
 		//Dummy shipping addresss
-		$find_replace['[wfte_shipping_address]'] = 'Shipping address name <br>20 Maple Avenue <br>San Pedro <br>California <br>United States (US) <br>90731 <br>';
+		$find_replace['[wfte_shipping_address]'] = 'Shipping address name <br>20 Maple Avenue <br>San Pedro <br>California <br>United States (US) <br>90731';
 
 		$find_replace['[wfte_vat_number]']                   = '123456';
 		$find_replace['[wfte_ssn_number]']                   = 'SSN123456';
@@ -1967,10 +1962,10 @@ class Wf_Woocommerce_Packing_List_CustomizerLib {
 		$find_replace['[wfte_product_table_shipping]']       = '$0.00';
 		$find_replace['[wfte_product_table_cart_discount]']  = '$0.00';
 		$find_replace['[wfte_product_table_order_discount]'] = '$0.00';
-		$find_replace['[wfte_product_table_total_tax]']      = '$0.00';
+		$find_replace['[wfte_product_table_total_tax]']      = '$2.00';
 		$find_replace['[wfte_product_table_fee]']            = '$0.00';
 		$find_replace['[wfte_product_table_payment_method]'] = 'PayPal';
-		$find_replace['[wfte_product_table_payment_total]']  = '$100.00';
+		$find_replace['[wfte_product_table_payment_total]']  = '$102.00';
 		$find_replace['[wfte_product_table_coupon]']         = '{ABCD100}';
 		$find_replace['[wfte_barcode_url]']                  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEYAAAAeAQMAAACrPfpdAAAABlBMVEX///8AAABVwtN+AAAAAXRSTlMAQObYZgAAABdJREFUGJVj+MzDfPg8P/NnG4ZRFgEWAHrncvdCJcw9AAAAAElFTkSuQmCC';
 

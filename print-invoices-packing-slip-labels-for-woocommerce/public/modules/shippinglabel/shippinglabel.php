@@ -57,6 +57,9 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 		add_filter('wt_admin_menu', array($this,'add_admin_pages'),10,1);
 		add_filter('wt_pklist_individual_print_button_for_document_types',array($this,'add_individual_print_button_in_admin_order_listing_page'),10,1);
 		add_filter( 'woocommerce_admin_order_actions_end', array( $this, 'document_print_btn_on_wc_order_listing_action_column' ), 10, 1 );
+
+		add_filter( 'wt_pklist_hide_shipping_address_for_local_pickup', array( $this, 'hide_shipping_address_for_local_pickup' ),10,3);
+        add_filter( 'wt_pklist_use_billing_address_as_shipping_address', array($this, 'use_billing_address_as_shipping_address'), 10, 3);
 	}
 
 	/**
@@ -152,13 +155,14 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 	{
 		if($base_id === $this->module_id)
 		{
-			$only_pro_html='<span style="color:red;"> ('.__('Pro version','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
+			$only_pro_html='<span class="wt_customizer_pro_text" style="color:red;"> ('.__('Pro version','print-invoices-packing-slip-labels-for-woocommerce').')</span>';
 			//these fields are the classname in template Eg: `company_logo` will point to `wfte_company_logo`
 			$settings = array(
-				'company_logo'=>__('Company Logo','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+				'company_logo_pro_element'=>__('Company Logo','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
 				'from_address'=>__('From Address','print-invoices-packing-slip-labels-for-woocommerce'),
 				'shipping_address'=>__('To Address','print-invoices-packing-slip-labels-for-woocommerce'),				
-				'order_number'=>__('Order Number','print-invoices-packing-slip-labels-for-woocommerce'),				
+				'order_number'=>__('Order Number','print-invoices-packing-slip-labels-for-woocommerce'),	
+				'order_date'=>__('Order Date','print-invoices-packing-slip-labels-for-woocommerce'),				
 				'weight'=>__('Weight','print-invoices-packing-slip-labels-for-woocommerce'),	
 				'shipping_method'=>__('Shipping Method','print-invoices-packing-slip-labels-for-woocommerce'),	
 				'email'=>__('Email Field','print-invoices-packing-slip-labels-for-woocommerce'),
@@ -167,16 +171,16 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 				'ssn_number'=>__('SSN number','print-invoices-packing-slip-labels-for-woocommerce'),
 				'customer_note'=>__('Customer note','print-invoices-packing-slip-labels-for-woocommerce'),
 				'footer' => __('Footer','print-invoices-packing-slip-labels-for-woocommerce'),
-				'barcode_pro' => __('Barcode','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'tracking_number_pro' => __('Tracking Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-				'package_no_pro' => __('Package Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-                'box_name_pro' => __('Box name','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-                'total_no_of_items_pro' => __('No of Items','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-                'fragile_pro'=>__('Fragile','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-                'thiswayup_pro'=>__('This way up','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
-                'keepdry_pro'=>__('Keep dry','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+				'barcode_pro_element' => __('Barcode','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+				'tracking_number_pro_element' => __('Tracking Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+				'package_no_pro_element' => __('Package Number','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+                'box_name_pro_element' => __('Box name','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+                'total_no_of_items_pro_element' => __('No of Items','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+                'fragile_pro_element'=>__('Fragile','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+                'thiswayup_pro_element'=>__('This way up','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
+                'keepdry_pro_element'=>__('Keep dry','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html,
 			);
-			$settings['return_policy'] = __('Return Policy','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html;
+			$settings['return_policy_pro_element'] = __('Return Policy','print-invoices-packing-slip-labels-for-woocommerce').$only_pro_html;
 			return $settings;
 		}
 		return $settings;
@@ -405,6 +409,13 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 	    		}   
 		        if(!is_null($this->customizer))
 		        {
+					if( count( $order_ids ) > 1 ) {
+						$sort_order = apply_filters( 'wt_pklist_sort_orders', 'desc', $this->module_base, $action ); // To choose the sorting of the orders when doing bulk print or download.
+						if ( 'asc' ===  $sort_order ) {
+							sort( $order_ids );
+						}
+					}
+					
 		        	$pdf_name=$this->customizer->generate_pdf_name($this->module_base,$order_ids);
 		        	
 		        	//RTL enabled
@@ -465,6 +476,13 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 	        foreach ($orders as $order_id)
 	        {
 	        	$order = ( WC()->version < '2.7.0' ) ? new WC_Order($order_id) : new wf_order($order_id);
+
+				/**
+				 * @since 4.6.0 - Added filter to add before preparing the order package and rendering the html.
+				 */
+				$pdf_filters = apply_filters( 'wt_pklist_add_filters_before_rendering_pdf', array(), $this->module_base, $order );
+				Wt_Pklist_Common::wt_pklist_pdf_add_filters( $pdf_filters );
+
 				$order_packages=null;
 				$order_packages=$box_packing->wf_pklist_create_order_single_package($order);
 				$number_of_order_package=count($order_packages);
@@ -497,8 +515,24 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 					$document_created = Wf_Woocommerce_Packing_List_Admin::created_document_count($order_id,$template_type);
 				}else
 				{
-					wp_die(__("Unable to print Packing slip. Please check the items in the order.",'print-invoices-packing-slip-labels-for-woocommerce'), "", array());
+					$no_item_error_message = __("Unable to print shipping label. Please check the items in the order.",'print-invoices-packing-slip-labels-for-woocommerce');
+                    if( 'No' === Wf_Woocommerce_Packing_List::get_option('woocommerce_wf_packinglist_preview') && 'print_shippinglabel' === $action ) {
+                        header('Content-Type: text/plain');
+                        // Sanitize the error message to avoid potential issues.
+                        $no_item_error_message = htmlspecialchars($no_item_error_message, ENT_QUOTES, 'UTF-8');
+                        // Return the error message.
+                        echo $no_item_error_message;
+                        // Make sure to stop further execution.
+                        exit();
+                    } else {
+                        wp_die($no_item_error_message, "", array());
+                    }
 				}
+
+				/**
+				 * @since 4.6.0 - Remove the filters which were added before preparing the order package and rendering the html.
+				 */
+				Wt_Pklist_Common::wt_pklist_pdf_remove_filters( $pdf_filters );
 			}
 			if("Yes" === $is_single_page_print)
 			{
@@ -538,7 +572,7 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 	 * @return void
 	 */
 	public function document_print_btn_on_wc_order_listing_action_column( $order ) {
-		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column',true,$this->module_base);
+		$show_print_button	= apply_filters('wt_pklist_show_document_print_button_action_column_free', true, $this->module_base, $order);
 		
 		if( !empty( $order ) && true === $show_print_button ) {
 			$order_id	= ( WC()->version < '2.7.0' ) ? $order->id : $order->get_id();
@@ -560,9 +594,17 @@ class Wf_Woocommerce_Packing_List_Shippinglabel
 					$this->module_title
 					);
 				$print_url		= Wf_Woocommerce_Packing_List_Admin::get_print_url($order_id,$action);
-				echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'"></a>';
+				echo '<a title="'.esc_attr($action_title).'" class="button wc-action-button wc-action-button-'.esc_attr($btn_action_name).' '.esc_attr($btn_action_name).' wt_pklist_action_btn wt_pklist_admin_print_document_btn" href="'.esc_url_raw($print_url).'" aria-label="'.esc_attr($action_title).'" target="_blank" style="padding:5px;"><img src="'.esc_url($img_url).'"></a>';
 			}
 		}
 	}
+
+	public function hide_shipping_address_for_local_pickup( $show_shipping_address_for_local_pickup, $template_type, $order ) {
+        return $this->module_base === $template_type ? false : $show_shipping_address_for_local_pickup;
+    }
+
+    public function use_billing_address_as_shipping_address( $show_shipping_address_for_local_pickup, $template_type, $order ) {
+        return $this->module_base === $template_type ? true : $show_shipping_address_for_local_pickup;
+    }
 }
 new Wf_Woocommerce_Packing_List_Shippinglabel();

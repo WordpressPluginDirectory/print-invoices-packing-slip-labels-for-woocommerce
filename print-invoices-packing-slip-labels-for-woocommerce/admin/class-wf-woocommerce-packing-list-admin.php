@@ -85,6 +85,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 	{
 		wp_enqueue_style('wp-color-picker');
 		wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/wf-woocommerce-packing-list-admin.css', array(), $this->version, 'all' );
+		wp_enqueue_style( $this->plugin_name.'-banners', plugin_dir_url( __FILE__ ) . 'css/wf-woocommerce-packing-list-admin-banners.css', array(), $this->version, 'all' );
 		if(!empty(self::not_activated_pro_addons())){
 			wp_enqueue_style( $this->plugin_name.'-addons-page', plugin_dir_url( __FILE__ ) . 'css/wf-woocommerce-packing-list-admin-addons-page.css', array(), $this->version, 'all' );
 		}
@@ -112,6 +113,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 				$dont_show_again = true;
 			}
 		}
+		$wt_pklist_plugin_data = $this->get_wt_pklist_plugin_data();
 		$params=array(
 			'nonces' => array(
 		            'wf_packlist' => wp_create_nonce(WF_PKLIST_PLUGIN_NAME),
@@ -122,6 +124,10 @@ class Wf_Woocommerce_Packing_List_Admin {
 			'print_action_url'=>admin_url('?print_packinglist=true'),
 			'order_meta_autocomplete' => json_encode($order_meta_autocomplete),
 			'is_rtl' => $is_rtl,
+			'wt_plugin_data' => $wt_pklist_plugin_data,
+			'show_document_preview' => Wf_Woocommerce_Packing_List::get_option( 'woocommerce_wf_packinglist_preview' ),
+			'document_access_type'	=> Wf_Woocommerce_Packing_List::get_option('wt_pklist_print_button_access_for'),
+			'is_user_logged_in'	=> is_user_logged_in(),
 			'msgs'=>array(
 				'settings_success'=>__('Settings updated.','print-invoices-packing-slip-labels-for-woocommerce'),
 				'all_fields_mandatory'=>__('All fields are mandatory','print-invoices-packing-slip-labels-for-woocommerce'),
@@ -145,6 +151,11 @@ class Wf_Woocommerce_Packing_List_Admin {
 				'buy_pro_prompt_edit_order_meta_desc' => __('You can edit an existing item by using its key.','print-invoices-packing-slip-labels-for-woocommerce'),
 				'pop_dont_show_again' => $dont_show_again,
 				'add_date_string_text' => __("Add","print-invoices-packing-slip-labels-for-woocommerce"),
+				'request_error' => __('Request error.','print-invoices-packing-slip-labels-for-woocommerce'),
+				'error_loading_data' => __('Error loading data.','print-invoices-packing-slip-labels-for-woocommerce'),
+				'min_value_error' => __( 'minimum value should be', 'print-invoices-packing-slip-labels-for-woocommerce'),
+				'generating_document_text' => __( 'Generating document...', 'print-invoices-packing-slip-labels-for-woocommerce' ),
+				'new_tab_open_error' => __( 'Failed to open new tab. Please check your browser settings.', 'print-invoices-packing-slip-labels-for-woocommerce' ),
 			)
 		);
 		wp_localize_script($this->plugin_name, 'wf_pklist_params', $params);
@@ -643,6 +654,14 @@ class Wf_Woocommerce_Packing_List_Admin {
 											$print_node_attr = $is_show_prompt;
 										}else
 										{
+											if(false !== strpos($action, 'download_'))
+											{
+												$item_css_class .=' wt_pklist_admin_download_document_btn';
+
+											}elseif(false !== strpos($action, 'print_'))
+											{
+												$item_css_class .=' wt_pklist_admin_print_document_btn';
+											}
 											$href_attr=' href="'.esc_url($url).'"';
 											$print_node_attr = 0;
 										}
@@ -668,6 +687,14 @@ class Wf_Woocommerce_Packing_List_Admin {
 			<?php
 	        }elseif("list_page" === $button_location)
 	        {
+				if(false !== strpos($action, 'download_'))
+				{
+					$css_class .=' wt_pklist_admin_download_document_btn';
+
+				}elseif(false !== strpos($action, 'print_'))
+				{
+					$css_class .=' wt_pklist_admin_print_document_btn';
+				}
 	        ?>
 				<li>
 					<a class="<?php echo esc_attr($confirmation_clss);?> <?php echo esc_attr($css_class);?>" data-id="<?php echo esc_attr($order_id);?>" <?php echo $onclick;?> <?php echo $href_attr;?> target="_blank" title="<?php echo esc_attr($tooltip);?>" <?php echo $custom_attr;?> ><?php echo wp_kses_post($label);?></a>
@@ -916,8 +943,32 @@ class Wf_Woocommerce_Packing_List_Admin {
 			{
 				remove_action('wp_footer', 'wp_admin_bar_render', 1000);
 				$action = (isset($_GET['type']) ? sanitize_text_field($_GET['type']) : '');
+
+				// Set the option to show the banner after the bulk print
+				$document_actions_for_banner = array(
+					'print_invoice',
+					'download_invoice',
+					'print_packinglist',
+					'download_packinglist',
+				);
+
+				if ( in_array( $action, $document_actions_for_banner ) && false === get_option( 'wt_pklist_banner_after_bulk_print_ipc' ) ) {
+					update_option( 'wt_pklist_banner_after_bulk_print_ipc', 1 );
+					do_action( 'wt_pklist_show_banner_after_bulk_print_ipc' );
+				}
+
+				// Removes the WooCommerce filter, that is validating the quantity to be an int
+				remove_filter('woocommerce_stock_amount', 'intval');
+
+				// Add a filter, that validates the quantity to be a float
+				add_filter('woocommerce_stock_amount', 'floatval');
+				
 				//action for modules to hook print function
 				do_action('wt_print_doc', $orders, $action);
+
+				// remove the filter from rendering html
+				remove_filter('woocommerce_stock_amount', 'floatval');
+				add_filter('woocommerce_stock_amount', 'intval');
 			}
 		}
 		exit();
@@ -1032,8 +1083,20 @@ class Wf_Woocommerce_Packing_List_Admin {
 			{
 				remove_action('wp_footer', 'wp_admin_bar_render', 1000);
 				$action = (isset($_GET['type']) ? sanitize_text_field($_GET['type']) : '');
+				
+				// Removes the WooCommerce filter, that is validating the quantity to be an int
+				remove_filter('woocommerce_stock_amount', 'intval');
+
+				// Add a filter, that validates the quantity to be a float
+				add_filter('woocommerce_stock_amount', 'floatval');
+				
 				//action for modules to hook print function
 				do_action('wt_print_doc', $orders, $action);
+
+				// remove the filter from rendering html
+				remove_filter('woocommerce_stock_amount', 'floatval');
+				add_filter('woocommerce_stock_amount', 'intval');
+
 			}
 		}
 		exit();
@@ -1460,7 +1523,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 	{ 	
 		$admin_module_save = 0;
 		$wt_pklist_admin_modules=get_option('wt_pklist_admin_modules');
-		if(false === $wt_pklist_admin_modules)
+		if(false === $wt_pklist_admin_modules || !is_array( $wt_pklist_admin_modules) )
 		{
 			$wt_pklist_admin_modules=array();
 			$admin_module_save = 1;
@@ -1518,27 +1581,24 @@ class Wf_Woocommerce_Packing_List_Admin {
 	*/
 	public function save_settings()
 	{
-		$out=array(
-			'status'=>false,
-			'msg'=>__('Error', 'print-invoices-packing-slip-labels-for-woocommerce'),
+		$base		= ( isset( $_POST['wf_settings_base'] ) ? sanitize_text_field( $_POST['wf_settings_base'] ) : 'main' );
+		$base_id	= ( "main" === $base ? '' : Wf_Woocommerce_Packing_List::get_module_id( $base ) );
+		$tab_name 	= ( isset( $_POST['wt_tab_name'] ) ? sanitize_text_field( $_POST['wt_tab_name'] ) : "" );
+		$out		= array(
+			'status'	=> false,
+			'msg'		=> __('Error', 'print-invoices-packing-slip-labels-for-woocommerce'),
 		);
 
-		$base=(isset($_POST['wf_settings_base']) ? sanitize_text_field($_POST['wf_settings_base']) : 'main');
-		$base_id=("main" === $base ? '' : Wf_Woocommerce_Packing_List::get_module_id($base));
-		$tab_name = (isset($_POST['wt_tab_name']) ? sanitize_text_field($_POST['wt_tab_name']) : "");
-		if(Wf_Woocommerce_Packing_List_Admin::check_write_access()) 
-    	{
-    		$the_options=Wf_Woocommerce_Packing_List::get_settings($base_id);
-    		$single_checkbox_fields = Wf_Woocommerce_Packing_List::get_single_checkbox_fields($base_id,$tab_name);
-    		$multi_checkbox_fields = Wf_Woocommerce_Packing_List::get_multi_checkbox_fields($base_id,$tab_name);
+		if( Wf_Woocommerce_Packing_List_Admin::check_write_access() ) {
 
-    		//multi select form fields array. (It will not return a $_POST val if it's value is empty so we need to set default value)
-	        $default_val_needed_fields=array();
-
-	        /* this is an internal filter */
-	        $default_val_needed_fields=apply_filters('wt_pklist_intl_alter_multi_select_fields', $default_val_needed_fields, $base_id);
-
-	        $validation_rule=array(				
+    		$the_options				= Wf_Woocommerce_Packing_List::get_settings( $base_id );
+    		$single_checkbox_fields		= Wf_Woocommerce_Packing_List::get_single_checkbox_fields( $base_id, $tab_name );
+    		$multi_checkbox_fields		= Wf_Woocommerce_Packing_List::get_multi_checkbox_fields( $base_id, $tab_name );
+	        
+			//multi select form fields array. (It will not return a $_POST val if it's value is empty so we need to set default value).
+			$default_val_needed_fields	= apply_filters( 'wt_pklist_intl_alter_multi_select_fields', array(), $base_id ); // this is an internal filter.    
+			
+			$validation_rule			= array(				
 				'woocommerce_wf_packinglist_boxes'			=> array( 'type'	=> 'text_arr' ),
 				'woocommerce_wf_packinglist_footer'			=> array( 'type'	=> 'textarea' ),
 				'woocommerce_wf_generate_for_taxstatus'		=> array( 'type'	=> 'text_arr' ),
@@ -1546,25 +1606,25 @@ class Wf_Woocommerce_Packing_List_Admin {
 				'wt_pklist_auto_temp_clear_interval'		=> array( 'type'	=> 'int' ),
 				'wt_pklist_separate_print_button_enable'	=> array( 'type'	=> 'text_arr' ),
 		    ); //this is for plugin settings default. Modules can alter
-	        $validation_rule=apply_filters('wt_pklist_intl_alter_validation_rule', $validation_rule, $base_id);
-
-	       	$run_empty_count = false;
+	        $validation_rule			= apply_filters( 'wt_pklist_intl_alter_validation_rule', $validation_rule, $base_id );
+	       	
+			$run_empty_count 			= false;
 	        //invoice number empty count trigger when changing the order status in invoice settings page
-	        if(isset($_POST['woocommerce_wf_generate_for_orderstatus'])){
-	        	if(is_array($the_options['woocommerce_wf_generate_for_orderstatus']) && is_array($_POST['woocommerce_wf_generate_for_orderstatus'])){
-	        		$find_diff = array_merge (array_diff($the_options['woocommerce_wf_generate_for_orderstatus'], $_POST['woocommerce_wf_generate_for_orderstatus']), array_diff($_POST['woocommerce_wf_generate_for_orderstatus'], $the_options['woocommerce_wf_generate_for_orderstatus']));
-		        	if(!empty($find_diff)){
+	        if ( isset( $_POST['woocommerce_wf_generate_for_orderstatus'] ) ) {
+	        	if ( is_array( $the_options['woocommerce_wf_generate_for_orderstatus'] ) && is_array( $_POST['woocommerce_wf_generate_for_orderstatus'] ) ) {
+	        		$find_diff = array_merge( array_diff( $the_options['woocommerce_wf_generate_for_orderstatus'], $_POST['woocommerce_wf_generate_for_orderstatus'] ), array_diff( $_POST['woocommerce_wf_generate_for_orderstatus'], $the_options['woocommerce_wf_generate_for_orderstatus'] ) );
+		        	if ( !empty( $find_diff ) ) {
 		        		$run_empty_count = true;
 		        	}
 	        	}
 	        }
 
 	        // invoice number empty count trigger when enable or disable the old orders
-	        if(isset($the_options['wf_woocommerce_invoice_prev_install_orders'])){
-	        	$prev_val = isset($_POST['wf_woocommerce_invoice_prev_install_orders']) ? sanitize_text_field($_POST['wf_woocommerce_invoice_prev_install_orders']) : "";
-	        	if(("" !== $prev_val) && ($prev_val !== $the_options['wf_woocommerce_invoice_prev_install_orders'])){
+	        if ( isset( $the_options['wf_woocommerce_invoice_prev_install_orders'] ) ) {
+	        	$prev_val	= isset($_POST['wf_woocommerce_invoice_prev_install_orders']) ? sanitize_text_field($_POST['wf_woocommerce_invoice_prev_install_orders']) : "";
+	        	if ( ( "" !== $prev_val ) && ( $prev_val !== $the_options['wf_woocommerce_invoice_prev_install_orders'] ) ) {
 	        		$run_empty_count = true;
-		        }elseif(("" === $prev_val) && ("No" !== $the_options['wf_woocommerce_invoice_prev_install_orders'])){
+		        } elseif ( ( "" === $prev_val ) && ( "No" !== $the_options['wf_woocommerce_invoice_prev_install_orders'] ) ) {
 	        		$run_empty_count = true;
 		        }
 	        }
@@ -1574,7 +1634,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 			 * To avoid the key conflict with new UI of Invoice number settings in invoice, credit note and proforma invoice number
 			 * The new keys are appended with keyword `_pdf_fw`
 			 */
-			$invoice_number_keys = array(
+			$invoice_number_keys	= array(
 				"woocommerce_wf_invoice_number_format",
 				"woocommerce_wf_Current_Invoice_number",
 				"woocommerce_wf_invoice_start_number",
@@ -1584,71 +1644,67 @@ class Wf_Woocommerce_Packing_List_Admin {
 				"woocommerce_wf_invoice_as_ordernumber",
 			);
 
-	        foreach($the_options as $key => $value) 
-	        {
-				if( in_array( $key, $invoice_number_keys ) ) {
-					$modified_key 	= $key.'_pdf_fw';
+	        foreach ( $the_options as $key => $value ) {
+				if ( in_array( $key, $invoice_number_keys ) ) {
+					$modified_key	= $key.'_pdf_fw';
 					$post_key		= isset( $_POST[$modified_key] ) ? $modified_key :  $key;
-				}else{
-					$post_key = $key;
+				} else {
+					$post_key 		= $key;
 				}
 
-	            if(isset($_POST[$post_key]))
-	            {
-	            	$the_options[$key]=$this->validate_settings_data($_POST[$post_key], $key, $validation_rule);
-	            	if("woocommerce_wf_packinglist_boxes" === $key)
-	            	{
-	            		$the_options[$key]=$this->validate_box_packing_field($_POST[$key]);
+	            if ( isset( $_POST[$post_key] ) ) {
+	            	$the_options[$key]		= $this->validate_settings_data( $_POST[$post_key], $key, $validation_rule );
+	            	
+					if( "woocommerce_wf_packinglist_boxes" === $key ) {
+	            		$the_options[$key]	= $this->validate_box_packing_field( $_POST[$key] );
 	            	}
 
-					if("wt_pklist_auto_temp_clear_interval" === $key && "" === trim($_POST[$key])){
-						$the_options[$key] = 0;
+					if ( "wt_pklist_auto_temp_clear_interval" === $key && "" === trim( $_POST[$key] ) ) {
+						$the_options[$key] 	= 0;
 					}
 
-	            	if(isset($multi_checkbox_fields[$key])){
-	            		$the_options[$key] = apply_filters('wf_module_save_multi_checkbox_fields',$the_options[$key],$key,$multi_checkbox_fields,$base_id);
+	            	if ( isset( $multi_checkbox_fields[$key] ) ) {
+	            		$the_options[$key] 	= apply_filters( 'wf_module_save_multi_checkbox_fields', $the_options[$key], $key, $multi_checkbox_fields, $base_id );
 	            	}
-	            }elseif(array_key_exists($key,$single_checkbox_fields)){
-	            	if(!isset($_POST['update_sequential_number'])){ //since the settings of the invoice are divided into 2
-	            		$the_options[$key] = $single_checkbox_fields[$key]; //if unchecked,PHP will not send the values, so get the unchecked value from the respective modules
+	            } elseif ( array_key_exists( $key, $single_checkbox_fields ) ) {
+	            	if( !isset( $_POST['update_sequential_number'] ) ) { //since the settings of the invoice are divided into 2
+	            		$the_options[$key] 	= $single_checkbox_fields[$key]; //if unchecked,PHP will not send the values, so get the unchecked value from the respective modules
 	            	}
-	            }elseif(array_key_exists($key, $multi_checkbox_fields)){
-		            $the_options[$key] = $multi_checkbox_fields[$key];
-	            }else
-	            {
-	            	if(array_key_exists($key,$default_val_needed_fields))
-	            	{
+	            } elseif ( array_key_exists( $key, $multi_checkbox_fields ) ) {
+		            $the_options[$key] 		= $multi_checkbox_fields[$key];
+	            } else {
+	            	if ( array_key_exists( $key, $default_val_needed_fields ) ) {
 	            		/* Set a hidden field for every multi-select field in the form. This will be used to populate the multi-select field with an empty array when it does not have any value. */
-	            		if(isset($_POST[$key.'_hidden']))
+	            		if ( isset( $_POST[$key.'_hidden'] ) )
 	            		{
-	            			$the_options[$key]=$default_val_needed_fields[$key];
+	            			$the_options[$key]	= $default_val_needed_fields[$key];
 	            		}
 	            	}
 	            }
 	        }
-	        Wf_Woocommerce_Packing_List::update_settings($the_options, $base_id);
 
+	        Wf_Woocommerce_Packing_List::update_settings($the_options, $base_id);
 	        do_action('wf_pklist_intl_after_setting_update', $the_options, $base_id);
 
-	        if(true === $run_empty_count){
+	        if ( true === $run_empty_count ) {
 	        	$this->wt_get_empty_invoice_number_count();
 	        }
 
-	        $out['status']=true;
-	        $out['msg']=__('Settings Updated', 'print-invoices-packing-slip-labels-for-woocommerce');
-	       
+	        $out['status']		= true;
+	        $out['msg']			= __('Settings Updated', 'print-invoices-packing-slip-labels-for-woocommerce');
+			$out['saved_data'] 	= $this->get_wt_pklist_plugin_data( true );
     	}
-		echo json_encode($out);
+		echo json_encode( $out );
 		exit();
 	}
 
 	public static function strip_unwanted_tags($html)
 	{
-		$html=html_entity_decode(stripcslashes($html));
-		$html = preg_replace('#<script(.*?)>(.*?)</script>#is', '', $html);
-		$html = preg_replace('#<iframe(.*?)>(.*?)</iframe>#is', '', $html);
-		$html = preg_replace('#<audio(.*?)>(.*?)</audio>#is', '', $html);
-		$html = preg_replace('#<video(.*?)>(.*?)</video>#is', '', $html);
+		$html	= html_entity_decode(stripcslashes($html));
+		$html 	= preg_replace('#<script(.*?)>(.*?)</script>#is', '', $html);
+		$html 	= preg_replace('#<iframe(.*?)>(.*?)</iframe>#is', '', $html);
+		$html 	= preg_replace('#<audio(.*?)>(.*?)</audio>#is', '', $html);
+		$html 	= preg_replace('#<video(.*?)>(.*?)</video>#is', '', $html);
 		return $html;
 	}
 
@@ -1715,99 +1771,55 @@ class Wf_Woocommerce_Packing_List_Admin {
     * Compatible with multi currency and currency switcher plugin
     * 2.7.9 - bug fix - compatible with WC version below 4.1.0
     */
-    public static function wf_display_price($user_currency,$order,$price,$from=""){
-
-    	$order_id=WC()->version<'2.7.0' ? $order->id : $order->get_id();
-    	$price = (float)$price;
-		$negative_price = (0 > $price) ? true : false;
-		$price = abs((float)$price);
-
-    	if(WC()->version<'4.1.0'){
-    		$symbols = self::wf_get_woocommerce_currency_symbols();
-    	}else{
-    		$symbols = get_woocommerce_currency_symbols();
-    	}
-
-    	if(get_option('woocommerce_currency_pos')){
-    		$currency_pos = get_option('woocommerce_currency_pos');
-    	}else{
-    		$currency_pos = "left";
-    	}
-    	
+    public static function wf_display_price( $user_currency, $order, $price, $from="" ) {
+    	$order_id			= WC()->version<'2.7.0' ? $order->id : $order->get_id();
+    	$price 				= (float)$price;
+		$negative_price 	= ( 0 > $price ) ? true : false;
+		$price 				= abs( (float)$price );
+		$symbols			= ( '4.1.0' > WC()->version ) ? self::wf_get_woocommerce_currency_symbols() : get_woocommerce_currency_symbols();
+		$currency_pos		= get_option('woocommerce_currency_pos') ? get_option('woocommerce_currency_pos') : 'left';
     	$wc_currency_symbol = isset( $symbols[ $user_currency ] ) ? $symbols[ $user_currency ] : '';
+		$wc_currency_symbol = apply_filters( 'woocommerce_currency_symbol', $wc_currency_symbol, $user_currency );
+		$decimal			= get_option('woocommerce_price_num_decimals') ? wc_get_price_decimals() : 0;
+    	$decimal_sep		= get_option('woocommerce_price_decimal_sep') ? wc_get_price_decimal_separator() : '.';
+		$thousand_sep		= get_option('woocommerce_price_thousand_sep') ? wc_get_price_thousand_separator() : ',';
 
-    	if(get_option('woocommerce_price_num_decimals')){
-    		$decimal = wc_get_price_decimals();
-    	}else{
-    		$decimal = 0;
-    	}
-    	
-    	if(get_option('woocommerce_price_decimal_sep')){
-    		$decimal_sep = wc_get_price_decimal_separator();
-    	}else{
-    		$decimal_sep = ".";
-    	} 
-
-    	if(get_option('woocommerce_price_thousand_sep')){
-    		$thousand_sep = wc_get_price_thousand_separator();
-    	}else{
-    		$thousand_sep = ",";
-    	}
-
-    	if(is_plugin_active('woocommerce-currency-switcher/index.php'))
-		{
-			if(class_exists('WOOCS')){
-				global $WOOCS;
-				$multi_currencies = $WOOCS->get_currencies();
-				$user_selected_currency = $multi_currencies[$user_currency];
-				$currency_symbol = "";
-				if(!empty($user_selected_currency)){
-					if(array_key_exists('position', $user_selected_currency))
-					{
-						$currency_pos = $user_selected_currency["position"];
-					}
-					if(array_key_exists('decimals', $user_selected_currency))
-					{
-						$decimal = $user_selected_currency["decimals"];
-					}
-					if(array_key_exists('symbol',$user_selected_currency))
-					{
-						$wc_currency_symbol = $user_selected_currency["symbol"];
-					}
-				}
+    	if ( is_plugin_active( 'woocommerce-currency-switcher/index.php' ) && class_exists( 'WOOCS' ) ) {
+			global $WOOCS;
+			$multi_currencies		= $WOOCS->get_currencies();
+			$user_selected_currency = $multi_currencies[$user_currency];
+			if ( !empty( $user_selected_currency ) ) {
+				$currency_pos		= isset( $user_selected_currency["position"] ) ? $user_selected_currency["position"] : $currency_pos;
+				$decimal 			= isset( $user_selected_currency["decimals"] ) ? $user_selected_currency["decimals"] : $decimal;
+				$wc_currency_symbol = isset( $user_selected_currency["symbol"] ) ? $user_selected_currency["symbol"] : $$wc_currency_symbol;
 			}
-		}elseif(is_plugin_active('woo-multi-currency/woo-multi-currency.php'))
-		{
-			$wmc_order_info = Wt_Pklist_Common::get_order_meta($order_id,'wmc_order_info',true);
-			if(!empty($wmc_order_info) && is_array($wmc_order_info) && isset($wmc_order_info[$user_currency]))
-			{
-				$currency_pos 	= isset($wmc_order_info[$user_currency]['pos']) ? isset($wmc_order_info[$user_currency]['pos']) : $currency_pos;
-				$decimal 		= isset($wmc_order_info[$user_currency]['decimals']) ? $wmc_order_info[$user_currency]['decimals'] : $decimal;
+		} elseif ( is_plugin_active( 'woo-multi-currency/woo-multi-currency.php' ) ) {
+			$wmc_order_info 		= Wt_Pklist_Common::get_order_meta($order_id,'wmc_order_info',true);
+			
+			if ( !empty( $wmc_order_info ) && is_array( $wmc_order_info ) && isset( $wmc_order_info[$user_currency] ) ) {
+				$currency_pos 		= isset( $wmc_order_info[$user_currency]['pos'] ) ? isset( $wmc_order_info[$user_currency]['pos'] ) : $currency_pos;
+				$decimal 			= isset( $wmc_order_info[$user_currency]['decimals'] ) ? $wmc_order_info[$user_currency]['decimals'] : $decimal;
 			}
 		}
 
-		if("" === trim($decimal)){
-			$decimal = 0;
-		}
-		if("" === trim($decimal_sep)){
-			$decimal_sep = ".";
-		}
-		if("" === trim($thousand_sep)){
-			$thousand_sep = ",";
+		$decimal			= ( "" === trim( $decimal ) ) ? 0 : $decimal;
+		$decimal_sep 		= ( "" === trim( $decimal_sep ) ) ? "." : $decimal_sep;
+		$thousand_sep		= ( "" === trim( $thousand_sep ) ) ? ',' : $thousand_sep;
+
+		$wc_currency_symbol = apply_filters( 'wt_pklist_alter_currency_symbol', $wc_currency_symbol, $symbols, $user_currency, $order, $price );
+
+		$currency_pos 		= apply_filters( 'wt_pklist_alter_currency_symbol_position', $currency_pos, $symbols, $wc_currency_symbol, $user_currency, $order, $price );
+		$decimal 			= apply_filters( 'wt_pklist_alter_currency_decimal', $decimal, $wc_currency_symbol, $user_currency, $order, $price );
+		$decimal_sep 		= apply_filters( 'wt_pklist_alter_currency_decimal_seperator', $decimal_sep, $symbols, $wc_currency_symbol, $user_currency, $order, $price );
+    	$thousand_sep 		= apply_filters( 'wt_pklist_alter_currency_thousand_seperator', $thousand_sep, $symbols, $wc_currency_symbol, $user_currency, $order, $price );
+    	$wf_formatted_price = number_format( $price, $decimal, $decimal_sep, $thousand_sep );
+
+    	if( "qrcode" === $from ) {
+			return wp_kses_post( $wf_formatted_price.' '.$user_currency );
 		}
 
-		$wc_currency_symbol = apply_filters('wt_pklist_alter_currency_symbol',$wc_currency_symbol,$symbols,$user_currency,$order,$price);
-
-		$currency_pos = apply_filters('wt_pklist_alter_currency_symbol_position',$currency_pos,$symbols,$wc_currency_symbol,$user_currency,$order,$price);
-		$decimal = apply_filters('wt_pklist_alter_currency_decimal',$decimal,$wc_currency_symbol,$user_currency,$order,$price);
-		$decimal_sep = apply_filters('wt_pklist_alter_currency_decimal_seperator',$decimal_sep,$symbols,$wc_currency_symbol,$user_currency,$order,$price);
-    	$thousand_sep = apply_filters('wt_pklist_alter_currency_thousand_seperator',$thousand_sep,$symbols,$wc_currency_symbol,$user_currency,$order,$price);
-    	$wf_formatted_price = number_format($price,$decimal,$decimal_sep,$thousand_sep);
-    	if("qrcode" === $from){
-			return $wf_formatted_price.' '.$user_currency;
-		}
-		if("" !== trim($wc_currency_symbol)){
-			switch ($currency_pos) {
+		if("" !== trim( $wc_currency_symbol ) ) {
+			switch ( $currency_pos ) {
 				case 'left':
 					$result = $wc_currency_symbol.$wf_formatted_price;
 					break;
@@ -1824,13 +1836,13 @@ class Wf_Woocommerce_Packing_List_Admin {
 					$result = $wc_currency_symbol.$wf_formatted_price;
 					break;
 			}
-		}else{
+		} else {
 			$result = $wf_formatted_price.' '.$user_currency;
 		}
-		$result = (true === $negative_price) ? '-'.$result : $result;
-		$result = apply_filters('wt_pklist_change_currency_format',$result,$symbols,$wc_currency_symbol,$currency_pos,$decimal,$decimal_sep,$thousand_sep,$user_currency,$price,$order);
 
-		return "<span>".$result."</span>";	
+		$result = (true === $negative_price) ? '-'. $result : $result;
+		$result = apply_filters( 'wt_pklist_change_currency_format', $result, $symbols, $wc_currency_symbol, $currency_pos, $decimal, $decimal_sep, $thousand_sep, $user_currency, $price, $order );
+		return "<span>".wp_kses_post( $result )."</span>";	
     }
 
     public static function wf_get_decimal_price($user_currency,$order){
@@ -3954,7 +3966,8 @@ class Wf_Woocommerce_Packing_List_Admin {
 							<input type="checkbox" id="wt_dont_show_again_doc_create"> '.__("Do not show again","print-invoices-packing-slip-labels-for-woocommerce").'
 						</div>
 					</div>
-					<div class="wf_pklist_popup_footer" style="float:left;">
+					
+					<div class="wt_doc_create_confirm_popup_footer wf_pklist_popup_footer" style="float:left;">
 						<button type="button" name="" class="button-secondary wf_pklist_popup_cancel" style="color: #3157A6;border-color: #3157A6;">
 							'.__("Cancel","print-invoices-packing-slip-labels-for-woocommerce").'
 						</button>
@@ -3963,6 +3976,14 @@ class Wf_Woocommerce_Packing_List_Admin {
 						</button>	
 					</div>
 					</div>
+				</div>
+				<div class="wt_pklist_document_generating_popup wf_pklist_popup" style="width:40%;text-align:left;">
+					<div class="wt_doc_create_confirm_popup_main_loading">
+						<div class="loading_message">'.__("Generating the document...", "print-invoices-packing-slip-labels-for-woocommerce").'</div>
+					</div>
+					<button type="button" name="" class="button-secondary wf_pklist_popup_cancel" style="">
+							'.__("Cancel","print-invoices-packing-slip-labels-for-woocommerce").'
+						</button>
 				</div>';
 			echo $data;
 		}
@@ -4026,32 +4047,21 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 * To add the meta box for debugging in order details page
 	 * 
 	 * @since 4.1.3
+	 * @since 4.4.1 - [Fix] - Security fixes
 	 * @return void
 	 */
 	public function wt_pklist_debug_metabox_content($post_or_order_object){
 		$order = ( $post_or_order_object instanceof WP_Post ) ? wc_get_order( $post_or_order_object->ID ) : $post_or_order_object;
 		$debug_result_final = array();
 		$result = '';
-		if(!empty($order) && isset($_GET['wt-pklist-debug'])){	
+		if ( ! empty( $order ) && isset( $_GET['wt-pklist-debug'] ) && 1 === (int)$_GET['wt-pklist-debug'] ) {	
 			$debug_result_final['order_details'] = $order;
-			if(isset($_GET['pid'])){
-				$pid = explode(',',$_GET['pid']);
-				if(!empty($pid)){
-					foreach($pid as $pid_key){
-						$debug_product 	= wc_get_product($pid_key);
-						$debug_result_final[$pid_key]['product'] = $debug_product;
-						if(isset($_GET['pmeta']) && '1' === $_GET['pmeta']){
-							$debug_result_final[$pid_key]['pmeta']=$debug_product->get_data();
-						}
-					}
-				}
-			}
-			$debug_result_final = apply_filters('wt_pklist_do_debugging',$debug_result_final,$order);
-			$result	= '<div style="overflow-x:auto;">';
-			$result .= '<pre>' . print_r($debug_result_final,true) . '</pre>';
-			$result	.= '</div>';
+			$result = '<div style="overflow-x:auto;">';
+			$result .= '<pre>' . wp_kses_post( print_r( $debug_result_final, true ) ) . '</pre>';
+			$result .= '</div>';
 		}
-		echo $result;
+
+		echo wp_kses_post( $result );
 	}
 
 	/**
@@ -4113,10 +4123,17 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 * Ajax function to export the plugin settings and templates as a json file from debug module
 	 *
 	 * @since 4.1.3
+	 * @since 4.4.3 - [Fix] - Added nonce verification and role capability check
 	 * @return void
 	 */
 	public function wt_pklist_settings_json(){
-		if(Wf_Woocommerce_Packing_List_Admin::check_write_access()) 
+		$export_module_nonce = $_POST['_wpnonce'] ? sanitize_text_field( $_POST['_wpnonce'] ) : '';
+		if( !wp_verify_nonce( $export_module_nonce, WF_PKLIST_PLUGIN_NAME . '_debug_export_form' ) || !Wf_Woocommerce_Packing_List_Admin::check_role_access() ) {
+			echo json_encode( array( 'error' => __('You are not allowed to do this action', 'print-invoices-packing-slip-labels-for-woocommerce' ) ) );
+			die;
+		}
+
+		if(Wf_Woocommerce_Packing_List_Admin::check_role_access()) 
     	{
 			$options = self::get_all_option_of_this_plugin();
 			$response = array('wt_pklist_key' => 'wt_pklist','options' => array(),'wfpklist_template_data' => array());
@@ -4144,7 +4161,8 @@ class Wf_Woocommerce_Packing_List_Admin {
 					'updated_at'	=> $temp->updated_at,
 				);
 			}
-			wp_send_json($response);	
+			$result = array( 'success' => true, 'response' => $response );
+			echo json_encode($result);	
 			die;
 		}
 	}
@@ -4154,112 +4172,117 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 *
 	 * @since 4.1.3
 	 * @since 4.3.0 - [Fix] - Update the options other than the plugin settings from the user customized json file issue
+	 * @since 4.4.3 - [Fix] - Added nonce verification and role capability check
 	 * @return void
 	 */
 	public function wt_pklist_import_settings(){
 		if(isset($_POST['wt_pklist_settings_import_confirm_text']))
 		{
 			if("confirm" === $_POST['wt_pklist_settings_import_confirm_text']){
-				if(!Wf_Woocommerce_Packing_List_Admin::check_write_access()) 
-				{
-					return;
-				}
-				
-				$template_import = isset($_POST['template_import']) ? sanitize_text_field($_POST['template_import']) : 'append';
-				require_once(ABSPATH . 'wp-load.php');
-				if ($_FILES['wt_pklist_import_setting_file']['error'] === UPLOAD_ERR_OK) {
-					$file = $_FILES['wt_pklist_import_setting_file']['tmp_name'];
-					// Read the contents of the file
-					$contents = file_get_contents($file);
-				
-					// Parse the JSON data
-					$data = json_decode($contents, true);
-					$error_code = 0;
-					$error_message = '';
-					if ($data !== null) {
-						if(!empty($data)){
-							if(3 === count($data) && isset($data['wt_pklist_key']) && "wt_pklist" === $data['wt_pklist_key'] && isset($data['options']) && isset($data['wfpklist_template_data'])){
-								foreach($data as $data_key => $value){
-									if("options" === $data_key){
-										$all_settings = self::get_all_option_of_this_plugin();
-										if(is_array($value) && !empty($value)){
-											foreach($value as $meta_key => $meta_value){
-												if(in_array($meta_key,$all_settings)){ // check the meta key is related to this plugin settings
-													update_option($meta_key,$meta_value);
+				$import_module_nonce = isset( $_POST['_wtpdf_debug_settings_import_nonce'] ) ? sanitize_text_field( $_POST['_wtpdf_debug_settings_import_nonce'] ) : '';
+ 				if( !wp_verify_nonce( $import_module_nonce, WF_PKLIST_PLUGIN_NAME . '_debug_import_form' ) || !Wf_Woocommerce_Packing_List_Admin::check_role_access() ) {
+					self::wt_pklist_safe_redirect_or_die( null, __( 'You are not allowed to do this action', 'print-invoices-packing-slip-labels-for-woocommerce') );
+				} else {
+					$template_import = isset($_POST['template_import']) ? sanitize_text_field($_POST['template_import']) : 'append';
+					require_once(ABSPATH . 'wp-load.php');
+					if ( $_FILES['wt_pklist_import_setting_file']['error'] === UPLOAD_ERR_OK ) {
+						$file = $_FILES['wt_pklist_import_setting_file']['tmp_name'];
+						// Read the contents of the file
+						$contents = file_get_contents($file);
+					
+						// Parse the JSON data
+						$data = json_decode($contents, true);
+						$error_code = 0;
+						$error_message = '';
+						if ($data !== null) {
+							if(!empty($data)){
+								if(3 === count($data) && isset($data['wt_pklist_key']) && "wt_pklist" === $data['wt_pklist_key'] && isset($data['options']) && isset($data['wfpklist_template_data'])){
+									foreach($data as $data_key => $value){
+										if("options" === $data_key){
+											$all_settings = self::get_all_option_of_this_plugin();
+											if(is_array($value) && !empty($value)){
+												foreach($value as $meta_key => $meta_value){
+													if(in_array($meta_key,$all_settings)){ // check the meta key is related to this plugin settings
+														update_option($meta_key,$meta_value);
+													}
 												}
+											}else{
+												$error_message 	= __("Settings are empty","print-invoices-packing-slip-labels-for-woocommerce");
+												$error_code		= 5;
+												break;
 											}
-										}else{
-											$error_message 	= __("Settings are empty","print-invoices-packing-slip-labels-for-woocommerce");
-											$error_code		= 5;
-											break;
-										}
-									}elseif("wfpklist_template_data" === $data_key){
-										if(is_array($value) && !empty($value)){
-											global $wpdb;
-											$table_name=$wpdb->prefix.Wf_Woocommerce_Packing_List::$template_data_tb;
-											if('override' === $template_import){
-												$wpdb->query("TRUNCATE TABLE $table_name");
-											}
-											foreach($value as $row_key => $row_val){
-												$search_template_name = $wpdb->get_row($wpdb->prepare("SELECT `id_wfpklist_template_data` from $table_name WHERE `template_name` LIKE %s AND `template_type` LIKE %s",array(esc_sql($row_val['template_name']),esc_sql($row_val['template_type']))));
-												if(!$search_template_name){
-													$template_name = $row_val['template_name'];
-												}else{
-													$template_name = $row_val['template_name'].'_'.time();
+										}elseif("wfpklist_template_data" === $data_key){
+											if(is_array($value) && !empty($value)){
+												global $wpdb;
+												$table_name=$wpdb->prefix.Wf_Woocommerce_Packing_List::$template_data_tb;
+												if('override' === $template_import){
+													$wpdb->query("TRUNCATE TABLE $table_name");
 												}
+												foreach($value as $row_key => $row_val){
+													$search_template_name = $wpdb->get_row($wpdb->prepare("SELECT `id_wfpklist_template_data` from $table_name WHERE `template_name` LIKE %s AND `template_type` LIKE %s",array(esc_sql($row_val['template_name']),esc_sql($row_val['template_type']))));
+													if(!$search_template_name){
+														$template_name = $row_val['template_name'];
+													}else{
+														$template_name = $row_val['template_name'].'_'.time();
+													}
 
-												$search_is_active = $wpdb->get_row($wpdb->prepare("SELECT `id_wfpklist_template_data` from $table_name WHERE `is_active` = %d AND `template_type` LIKE %s",array(esc_sql($row_val['is_active']),esc_sql($row_val['template_type']))));
-												$is_active	= (!$search_is_active) ? $row_val['is_active'] : 0;
-												$insert_data=array(
-													'template_name'	=> $template_name,
-													'template_html'	=> $row_val['template_html'],
-													'template_from'	=> $row_val['template_from'],
-													'template_type'	=> $row_val['template_type'],
-													'is_dc_compatible' => $row_val['is_dc_compatible'],
-													'created_at'	=> $row_val['created_at'],
-													'updated_at'	=> $row_val['updated_at'],
-													'is_active'		=>  $is_active
-												);
-												$insert_data_type=array(
-													'%s','%s','%d','%s','%d','%d','%d','%d'
-												); 
-												$wpdb->insert($table_name,$insert_data,$insert_data_type);
+													$search_is_active = $wpdb->get_row($wpdb->prepare("SELECT `id_wfpklist_template_data` from $table_name WHERE `is_active` = %d AND `template_type` LIKE %s",array(esc_sql($row_val['is_active']),esc_sql($row_val['template_type']))));
+													$is_active	= (!$search_is_active) ? $row_val['is_active'] : 0;
+													$insert_data=array(
+														'template_name'	=> $template_name,
+														'template_html'	=> $row_val['template_html'],
+														'template_from'	=> $row_val['template_from'],
+														'template_type'	=> $row_val['template_type'],
+														'is_dc_compatible' => $row_val['is_dc_compatible'],
+														'created_at'	=> $row_val['created_at'],
+														'updated_at'	=> $row_val['updated_at'],
+														'is_active'		=>  $is_active
+													);
+													$insert_data_type=array(
+														'%s','%s','%d','%s','%d','%d','%d','%d'
+													); 
+													$wpdb->insert($table_name,$insert_data,$insert_data_type);
+												}
 											}
 										}
 									}
-								}
-								if(0 === $error_code){
-									$error_message = __("Imported successfully","print-invoices-packing-slip-labels-for-woocommerce");
-									update_option('wt_pklist_import_date',time());
+									if(0 === $error_code){
+										$error_message = __("Imported successfully","print-invoices-packing-slip-labels-for-woocommerce");
+										update_option('wt_pklist_import_date',time());
+									}
+								}else{
+									$error_message 	= __("Incorrect file","print-invoices-packing-slip-labels-for-woocommerce");
+									$error_code 	= 4;	
 								}
 							}else{
-								$error_message 	= __("Incorrect file","print-invoices-packing-slip-labels-for-woocommerce");
-								$error_code 	= 4;	
+								$error_message 	= __("Error: Empty JSON file","print-invoices-packing-slip-labels-for-woocommerce");
+								$error_code 	= 3;
 							}
-						}else{
-							$error_message 	= __("Error: Empty JSON file","print-invoices-packing-slip-labels-for-woocommerce");
-							$error_code 	= 3;
+						} else {
+							$error_message 	= __("Error: Invalid JSON data","print-invoices-packing-slip-labels-for-woocommerce");
+							$error_code 	= 2;
 						}
 					} else {
-						$error_message 	= __("Error: Invalid JSON data","print-invoices-packing-slip-labels-for-woocommerce");
-						$error_code 	= 2;
+						$error_message 	= __("Error uploading the file","print-invoices-packing-slip-labels-for-woocommerce");
+						$error_message .= $_FILES['file']['error'];
+						$error_code		= 1;
 					}
-				} else {
-					$error_message 	= __("Error uploading the file","print-invoices-packing-slip-labels-for-woocommerce");
-					$error_message .= $_FILES['file']['error'];
-					$error_code		= 1;
-				}
 
-				$logger_res_array = array(
-					'message' 		=> $error_message,
-					'imported_data' => $data,
-					'error_code'	=> $error_code,
-					'import_date'	=> time(),
-				);
-				$logger = wc_get_logger();
-				$logger->info( wc_print_r( $logger_res_array, true ), array( 'source' => 'wt_pklist_import' ) );
-				$_POST['wt_status'] = $error_code;
-				$_POST['wt_status_message'] = $error_message;
+					$logger_res_array = array(
+						'message' 		=> $error_message,
+						'imported_data' => $data,
+						'error_code'	=> $error_code,
+						'import_date'	=> time(),
+					);
+
+					$track_log          = ( defined( 'WP_DEBUG' ) && WP_DEBUG ) || apply_filters( 'wt_pklist_debug_enable_translation_log', false );	
+					if ( function_exists( 'wc_get_logger' ) && ! empty( $logger_res_array ) && true === $track_log ) {
+						$logger = wc_get_logger();
+						$logger->info( wc_print_r( $logger_res_array, true ), array( 'source' => 'wt_pklist_import' ) );
+					}
+					$_POST['wt_status'] = $error_code;
+					$_POST['wt_status_message'] = $error_message;
+				}
 			}
 		}
 	}
@@ -4268,45 +4291,56 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 * Ajax function to reset the plugin settings and templates from debug module
 	 *
 	 * @since 4.1.3
+	 * @since 4.4.3 - [Fix] - Added nonce verification and role capability check
 	 * @return void
 	 */
 	 public function wt_pklist_reset_settings(){
-		if(isset($_POST['wt_pklist_settings_reset_confirm_text'])){
-			require_once WF_PKLIST_PLUGIN_PATH . 'includes/class-wf-woocommerce-packing-list-activator.php';
-			require_once plugin_dir_path(WF_PKLIST_PLUGIN_FILENAME)."admin/modules/migrator/migrator.php"; 
-			$options = self::get_all_option_of_this_plugin();
-			
-			foreach($options as $option){
-				delete_option($option);
-			}
 
-			if(!isset($_POST['dont_reset_template'])){
-				global $wpdb;
-				$table_name=$wpdb->prefix.Wf_Woocommerce_Packing_List::$template_data_tb;
-				$delete_the_template = $wpdb->query("TRUNCATE TABLE $table_name");
-			}else{
-				$delete_the_template = 0;
-				update_option('wf_pklist_templates_migrated',1);
-			}
-	
-			// reset to default settings
-			Wf_Woocommerce_Packing_List_Activator::install_tables();
-			Wf_Woocommerce_Packing_List_Activator::copy_address_from_woo();
-			Wf_Woocommerce_Packing_List_Activator::save_plugin_version();
-			Wf_Woocommerce_Packing_List_Migrator::migrate();
-			$this->admin_modules();
-			$public_obj = new Wf_Woocommerce_Packing_List_Public( $this->plugin_name, $this->version );
-			$public_obj->common_modules();
-			
-			update_option('wt_pklist_reset_date',time());
-			if(false === $delete_the_template)
-			{
-				$_POST['wt_status_message'] =  __("Error:","print-invoices-packing-slip-labels-for-woocommerce") . $wpdb->last_error.__("Truncation did not complete as expected.","print-invoices-packing-slip-labels-for-woocommerce");
-				$_POST['wt_reset_status'] = 0;
-			}
-			else
-			{
-				$_POST['wt_reset_status'] = 1;
+		if(isset($_POST['wt_pklist_settings_reset_confirm_text'])){
+
+			$reset_nonce	= isset( $_POST['_wtpdf_debug_settings_reset_nonce'] ) ? sanitize_text_field( $_POST['_wtpdf_debug_settings_reset_nonce'] ) : '';
+			if( !wp_verify_nonce( $reset_nonce, WF_PKLIST_PLUGIN_NAME . '_debug_reset_form' ) || !Wf_Woocommerce_Packing_List_Admin::check_role_access() ) { // added nonce verification and capability check
+				
+				self::wt_pklist_safe_redirect_or_die( null, __( 'You are not allowed to do this action', 'print-invoices-packing-slip-labels-for-woocommerce') );	
+
+			} else {
+
+				require_once WF_PKLIST_PLUGIN_PATH . 'includes/class-wf-woocommerce-packing-list-activator.php';
+				require_once plugin_dir_path(WF_PKLIST_PLUGIN_FILENAME)."admin/modules/migrator/migrator.php"; 
+				$options = self::get_all_option_of_this_plugin();
+				
+				foreach($options as $option){
+					delete_option($option);
+				}
+
+				if(!isset($_POST['dont_reset_template'])){
+					global $wpdb;
+					$table_name=$wpdb->prefix.Wf_Woocommerce_Packing_List::$template_data_tb;
+					$delete_the_template = $wpdb->query("TRUNCATE TABLE $table_name");
+				}else{
+					$delete_the_template = 0;
+					update_option('wf_pklist_templates_migrated',1);
+				}
+		
+				// reset to default settings
+				Wf_Woocommerce_Packing_List_Activator::install_tables();
+				Wf_Woocommerce_Packing_List_Activator::copy_address_from_woo();
+				Wf_Woocommerce_Packing_List_Activator::save_plugin_version();
+				Wf_Woocommerce_Packing_List_Migrator::migrate();
+				$this->admin_modules();
+				$public_obj = new Wf_Woocommerce_Packing_List_Public( $this->plugin_name, $this->version );
+				$public_obj->common_modules();
+				
+				update_option('wt_pklist_reset_date',time());
+				if(false === $delete_the_template)
+				{
+					$_POST['wt_status_message'] =  __("Error:","print-invoices-packing-slip-labels-for-woocommerce") . $wpdb->last_error.__("Truncation did not complete as expected.","print-invoices-packing-slip-labels-for-woocommerce");
+					$_POST['wt_reset_status'] = 0;
+				}
+				else
+				{
+					$_POST['wt_reset_status'] = 1;
+				}
 			}
 		}
 	}
@@ -4728,6 +4762,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 			$general_module_fields = array(
 				'woocommerce_wf_packinglist_companyname',
 				'woocommerce_wf_packinglist_sender_address_line1',
+				'woocommerce_wf_packinglist_sender_address_line2',
 				'woocommerce_wf_packinglist_sender_city',
 				'wf_country',
 				'woocommerce_wf_packinglist_sender_postalcode',
@@ -4759,7 +4794,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 						$invoice_gen_status = $_POST['woocommerce_wf_add_invoice_in_customer_mail'];
 						$i_val = $_POST['woocommerce_wf_add_invoice_in_customer_mail'];
 					}else{
-						$invoice_gen_status = array('wc-completed');
+						$invoice_gen_status = array('wc-completed','wc-processing');
 						$i_val = array();
 					}
 					Wf_Woocommerce_Packing_List::update_option('woocommerce_wf_generate_for_orderstatus',$invoice_gen_status,$invoice_module_id);
@@ -4779,20 +4814,20 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 * Function to update the plugin tax settings when woocommerce tax is changed
 	 *
 	 * @since 4.2.0
+	 * @since 4.4.2 - set the plugin tax status to exclusive tax if the WC tax is false
 	 * @return void
 	 */
 	public function update_plugin_settings_when_wc_update_settings(){
-		$wc_tax_status_old_value	= get_option('woocommerce_prices_include_tax');
-		if ( wc_tax_enabled() && isset( $_POST['woocommerce_prices_include_tax'] ) && $wc_tax_status_old_value !== $_POST['woocommerce_prices_include_tax'] ) {
-			// Update your plugin's settings here
-			$wc_tax_status	= sanitize_text_field($_POST['woocommerce_prices_include_tax']); // Sanitize the input
-			$wc_tax_status	= !empty($wc_tax_status) ? $wc_tax_status : 'no';
-			if( "yes" === $wc_tax_status ) {
-				$wt_tax	= array('in_tax'); 
+		$current_wc_page	= isset( $_GET['page'] ) ? sanitize_text_field( $_GET['page'] ) : '';
+		$wc_price_inc_tax	= get_option('woocommerce_prices_include_tax');
+		$wc_tax_enable		= ! function_exists( 'wc_tax_enabled' ) ? apply_filters( 'wc_tax_enabled', get_option( 'woocommerce_calc_taxes' ) === 'yes' ) : wc_tax_enabled();
+		
+		if ( 'wc-settings' === $current_wc_page ) {
+			if ( $wc_tax_enable &&  "yes" === $wc_price_inc_tax ) {
+				Wf_Woocommerce_Packing_List::update_option('woocommerce_wf_generate_for_taxstatus', array( 'in_tax' ) );
 			} else {
-				$wt_tax = array('ex_tax'); 
+				Wf_Woocommerce_Packing_List::update_option('woocommerce_wf_generate_for_taxstatus', array( 'ex_tax' ) );
 			}
-			Wf_Woocommerce_Packing_List::update_option('woocommerce_wf_generate_for_taxstatus', $wt_tax);
 		}
 	}
 
@@ -4811,4 +4846,76 @@ class Wf_Woocommerce_Packing_List_Admin {
 		return $screen_ids;
 	}
 
+	public function get_wt_pklist_plugin_data( $from_ajax = false ) {
+		$page_param 			= '';
+		$wt_pklist_plugin_data 	= array(
+			'main'	=> get_option('Wf_Woocommerce_Packing_List'),
+		);
+
+		if( true === $from_ajax ) {
+			$base		= ( isset( $_POST[ 'wf_settings_base' ] ) ? sanitize_text_field( $_POST[ 'wf_settings_base' ] ) : 'main' );
+			$page_param	= ( "main" === $base ? '' : Wf_Woocommerce_Packing_List::get_module_id( $base ) );
+		} else {
+			$page_param = isset( $_GET['page'] ) ? sanitize_text_field( $_GET['page'] ): '';
+		}
+
+		$wt_pklist_plugin_data = apply_filters('wt_pklist_get_plugin_data', $wt_pklist_plugin_data, $page_param);
+		return $wt_pklist_plugin_data;
+	}
+
+	/**
+	 * Adds the filter to customize before rendering the pdf
+	 *
+	 * @since 4.6.0
+	 * @param array $filters
+	 * @return array
+	 */
+	public function pdf_before_rendering_filters( $filters, $template_type, $order ) {
+		$filters[] = array( 'woocommerce_currency_symbol', array( $this, 'alter_currency_symbol' ), 10, 2 );
+		return $filters;
+	}
+
+	/**
+	 * Alters the currency symbol in all the documents as per the plugin settings.
+	 *
+	 * @param string $currency_symbol
+	 * @param string $currency
+	 * @return string
+	 */
+	public function alter_currency_symbol( $currency_symbol, $currency ) {
+		
+		// show currency code instead of currency symbol.
+		if ( 'Yes' === Wf_Woocommerce_Packing_List::get_option( 'wt_pklist_show_currency_code' ) ) {
+			return $currency;
+		}
+
+		// use extended font library for currency symbol.
+		if ( 
+			'Yes' !== Wf_Woocommerce_Packing_List::get_option( 'wt_pklist_show_currency_code' ) && 
+			'Yes' === Wf_Woocommerce_Packing_List::get_option( 'wt_pklist_additional_currency_font_support' ) &&
+			false === self::check_if_mpdf_used()
+		) {
+			$currency_symbol = sprintf( '<span class="wt_pdf_currency_symbol">%s</span>', $currency_symbol );
+			return $currency_symbol;
+		}
+		
+		return $currency_symbol;
+	}
+
+	/**
+	 * Update the plugin settings with migrated values
+	 * 
+	 * @since 4.6.1
+	 */
+	public function update_plugin_settings_with_migration( $options, $base_id ) {
+		if ( '' === $base_id ) {
+			if ( isset( $options['woocommerce_wf_packinglist_preview'] ) ) {
+				if ( 'enabled' === $options['woocommerce_wf_packinglist_preview'] ) {
+					Wf_Woocommerce_Packing_List::update_option( 'woocommerce_wf_packinglist_preview', 'No' );
+				} else if ( 'disabled' === $options['woocommerce_wf_packinglist_preview'] ) {
+					Wf_Woocommerce_Packing_List::update_option( 'woocommerce_wf_packinglist_preview', 'Yes' );
+				}
+			}
+		}
+	}
 }

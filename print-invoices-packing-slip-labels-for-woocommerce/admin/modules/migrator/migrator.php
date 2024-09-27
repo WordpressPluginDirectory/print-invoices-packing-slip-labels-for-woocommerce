@@ -76,13 +76,13 @@ class Wf_Woocommerce_Packing_List_Migrator
 			'woocommerce_wf_packinglist_sender_postalcode'=>'',
 			'woocommerce_wf_packinglist_sender_contact_number'=>'',
 			'woocommerce_wf_packinglist_sender_vat'=>'',
-			'woocommerce_wf_packinglist_preview'=>'enabled',
+			'woocommerce_wf_packinglist_preview'=>'No',
 			'woocommerce_wf_packinglist_package_type'=>'single_packing', //just keeping to avoid errors
 			'woocommerce_wf_packinglist_boxes'=>array(),
-			'woocommerce_wf_add_rtl_support'=>'No',
+			'woocommerce_wf_add_rtl_support'=>'Yes',
 		),
 		'invoice'=>array(
-        	'woocommerce_wf_generate_for_orderstatus'=>array('wc-completed'),
+        	'woocommerce_wf_generate_for_orderstatus'=>array('wc-completed','wc-processing'),
         	'woocommerce_wf_attach_invoice'=>array(),
         	'woocommerce_wf_packinglist_logo'=>'',
         	'woocommerce_wf_add_invoice_in_mail'=>'No',
