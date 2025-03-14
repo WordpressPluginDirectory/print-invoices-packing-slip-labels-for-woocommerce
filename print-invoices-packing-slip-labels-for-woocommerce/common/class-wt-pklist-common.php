@@ -201,7 +201,7 @@ class Wt_Pklist_Common
         
 		// WC3.0 fallback to properties
 		$property = str_replace('-', '_', sanitize_title( ltrim($meta_key, '_') ) );
-		if ( empty( $meta_value ) && is_callable( array( $order, "get_{$property}" ) ) ) {
+        if ( empty( $meta_value ) && method_exists( $order, "get_{$property}" ) && is_callable( array( $order, "get_{$property}" ) ) ) {
 			$meta_value = $order->{"get_{$property}"}( 'view' );
 		}
 
@@ -447,6 +447,8 @@ class Wt_Pklist_Common
         $table_name = $wpdb->prefix.'wc_orders_meta';
         if($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name){
             $order_id = self::get_order_id($order);
+            $value = maybe_serialize( $value );
+            
             if(self::meta_key_exists_in_wc_order_meta($order_id,$meta_key)){
                 $update_data        = array('meta_value' => $value);
                 $update_data_type   = array( '%s' );
