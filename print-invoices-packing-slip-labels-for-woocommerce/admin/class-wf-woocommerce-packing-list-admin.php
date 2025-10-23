@@ -104,6 +104,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 		$this->bulk_actions=apply_filters('wt_print_bulk_actions',$this->bulk_actions);
 
 		$order_meta_autocomplete = self::order_meta_dropdown_list();
+		$product_meta_autocomplete = self::product_meta_dropdown_list();
 		$wf_admin_img_path=WF_PKLIST_PLUGIN_URL . 'admin/images/uploader_sample_img.png';
 		$is_rtl = is_rtl() ? 'rtl' : 'ltr';
 		$user_id = get_current_user_id();
@@ -118,11 +119,13 @@ class Wf_Woocommerce_Packing_List_Admin {
 			'nonces' => array(
 		            'wf_packlist' => wp_create_nonce(WF_PKLIST_PLUGIN_NAME),
 		     ),
+			'newsletter_banner_nonce' => wp_create_nonce('wt_newsletter_banner_nonce'),
 			'ajaxurl' => admin_url('admin-ajax.php'),
 			'no_image'=>$wf_admin_img_path,
 			'bulk_actions'=>array_keys($this->bulk_actions),
 			'print_action_url'=>admin_url('?print_packinglist=true'),
 			'order_meta_autocomplete' => json_encode($order_meta_autocomplete),
+			'product_meta_autocomplete' => json_encode($product_meta_autocomplete),
 			'is_rtl' => $is_rtl,
 			'wt_plugin_data' => $wt_pklist_plugin_data,
 			'show_document_preview' => Wf_Woocommerce_Packing_List::get_option( 'woocommerce_wf_packinglist_preview' ),
@@ -671,6 +674,12 @@ class Wf_Woocommerce_Packing_List_Admin {
 	{
 		/* filter for customers to alter buttons */
 		$btn_arr=apply_filters('wt_pklist_alter_print_actions',$btn_arr, $order, $order_id, $button_location);
+		
+		// Start output buffering only for list_page (which expects return value)
+		if ('list_page' === $button_location) {
+			ob_start();
+		}
+		
 		foreach($btn_arr as $btn_key=>$args)
 		{
 			$action=$args['action'];
@@ -844,6 +853,12 @@ class Wf_Woocommerce_Packing_List_Admin {
 			<?php
 	        }
 	    }
+		
+		// Return HTML if we were called in a context that expects it
+		if ('list_page' === $button_location) {
+			$html = ob_get_clean();
+			return $html;
+		}
 	}
 
 	/**
@@ -948,37 +963,34 @@ class Wf_Woocommerce_Packing_List_Admin {
     	}
     	return $is_allowed;
 	}
-
+	
 	/**
 	 * function to render printing window
 	 *
 	 * @since 4.2.0 - print the document as per the input from the plugin settings page
 	 */
     public function print_window() {
-		$nonce = isset($_REQUEST['_wpnonce']) ? sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		if ( isset( $_REQUEST['print_packinglist']) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( isset( $_REQUEST['print_packinglist']) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized reason : guest users also need to print the document from the mail link
 			$document_access_type	= Wf_Woocommerce_Packing_List::get_option('wt_pklist_print_button_access_for');
 			$wc_my_account_page 	= get_permalink( get_option('woocommerce_myaccount_page_id') );
-
 			$attaching_pdf = isset($_REQUEST['attaching_pdf']) ? sanitize_text_field(wp_unslash($_REQUEST['attaching_pdf'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
 			if ( "logged_in" === $document_access_type ) {
-				
-				if ( is_user_logged_in() && empty( $attaching_pdf ) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-					
+				$nonce = isset( $_REQUEST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ) : '';
+				if ( is_user_logged_in() && empty( $attaching_pdf ) && wp_verify_nonce( $nonce, WF_PKLIST_PLUGIN_NAME ) ) { 
 					// admin link
 					$this->print_document_from_the_admin_link();
-					
-				} else if ( is_user_logged_in() && isset( $attaching_pdf ) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				} else if ( is_user_logged_in() && isset( $attaching_pdf ) && wp_verify_nonce( $nonce, WF_PKLIST_PLUGIN_NAME ) ) { 
 					// guest link
 					$this->print_document_from_the_mail_link();
 				} else {
+					
 					// not allowed for the guest user
 					$redirect_url = self::get_page_url_for_denied_document_access();
 					self::wt_pklist_safe_redirect_or_die( $redirect_url, __("You are not allowed to access this page","print-invoices-packing-slip-labels-for-woocommerce") );
 				}
 			} else {
-
-				if ( empty( $attaching_pdf ) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				if ( empty( $attaching_pdf ) ) {
 					if ( is_user_logged_in() ) {
 						// admin link
 						$this->print_document_from_the_admin_link();
@@ -994,7 +1006,6 @@ class Wf_Woocommerce_Packing_List_Admin {
 			}
 		}
     }
-	
 
 	/**
 	 * Handles the admin side document link
@@ -1090,8 +1101,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 			if(count($orders)>0)
 			{
 				remove_action('wp_footer', 'wp_admin_bar_render', 1000);
-				$nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-				$action = (isset($_GET['type']) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME)) ? sanitize_text_field(wp_unslash($_GET['type'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$action = (isset($_GET['type']) ? sanitize_text_field(wp_unslash($_GET['type'])) : ''); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
 				// Set the option to show the banner after the bulk print
 				$document_actions_for_banner = array(
@@ -1129,9 +1139,9 @@ class Wf_Woocommerce_Packing_List_Admin {
 	 * @return void
 	 */
 	public function print_document_from_the_mail_link() {
-		$access_key 		= isset( $_REQUEST['access_key'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['access_key'] ) ) : '';
-		$encoded_order_id	= isset( $_REQUEST['post'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['post'] ) ) : '';
-		$mail_id			= isset( $_REQUEST['email'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['email'] ) ) : '';
+		$access_key 		= isset( $_REQUEST['access_key'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['access_key'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$encoded_order_id	= isset( $_REQUEST['post'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['post'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$mail_id			= isset( $_REQUEST['email'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['email'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		if ( empty( $encoded_order_id ) ) {
 			self::wt_pklist_safe_redirect_or_die( null, __("Invalid order id","print-invoices-packing-slip-labels-for-woocommerce") );	
 		}
@@ -1231,7 +1241,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 			{
 				remove_action('wp_footer', 'wp_admin_bar_render', 1000);
 				$nonce = isset($_GET['_wpnonce']) ? sanitize_text_field(wp_unslash($_GET['_wpnonce'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-				$action = (isset($_GET['type']) && wp_verify_nonce($nonce, WF_PKLIST_PLUGIN_NAME)) ? sanitize_text_field(wp_unslash($_GET['type'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				$action = (isset($_GET['type'])) ? sanitize_text_field(wp_unslash($_GET['type'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 				
 				// Removes the WooCommerce filter, that is validating the quantity to be an int
 				remove_filter('woocommerce_stock_amount', 'intval');
@@ -1815,6 +1825,31 @@ class Wf_Woocommerce_Packing_List_Admin {
 						$the_options[$key] 	= 0;
 					}
 
+					if( "wf_invoice_product_meta" === $key ) {
+						if ( !empty($_POST[$key]) ) {
+							$the_options['wf_invoice_product_meta_fields'] = $_POST[$key];
+						}
+					}
+
+					if( "wt_invoice_dropbox_app_secret" === $key || "wt_invoice_dropbox_access_code" === $key ) {
+						// Only process if value exists and is not empty
+						if ( !empty($the_options[$key]) ) {
+							// Check if the value is already encoded by trying to decode and re-encode
+							try {
+								$decoded = Wf_Woocommerce_Packing_List::wf_decode($the_options[$key]);
+								$re_encoded = Wf_Woocommerce_Packing_List::wf_encode($decoded);
+								
+								// If re-encoding gives different result, it was not encoded
+								if ( $re_encoded !== $the_options[$key] ) {
+									$the_options[$key] = Wf_Woocommerce_Packing_List::wf_encode($the_options[$key]);
+								}
+							} catch (Exception $e) {
+								// If decoding fails, assume it's not encoded and encode it
+								$the_options[$key] = Wf_Woocommerce_Packing_List::wf_encode($the_options[$key]);
+							}
+						}
+					}
+
 	            	if ( isset( $multi_checkbox_fields[$key] ) ) {
 	            		$the_options[$key] 	= apply_filters( 'wf_module_save_multi_checkbox_fields', $the_options[$key], $key, $multi_checkbox_fields, $base_id );
 	            	}
@@ -1961,6 +1996,30 @@ class Wf_Woocommerce_Packing_List_Admin {
 			if ( !empty( $wmc_order_info ) && is_array( $wmc_order_info ) && isset( $wmc_order_info[$user_currency] ) ) {
 				$currency_pos 		= isset( $wmc_order_info[$user_currency]['pos'] ) ? isset( $wmc_order_info[$user_currency]['pos'] ) : $currency_pos;
 				$decimal 			= isset( $wmc_order_info[$user_currency]['decimals'] ) ? $wmc_order_info[$user_currency]['decimals'] : $decimal;
+			}
+		} elseif ( is_plugin_active( 'woocommerce-multilingual/wpml-woocommerce.php' ) ) {  
+			// Handle WooCommerce Multilingual currency.
+			global $woocommerce_wpml;
+			
+			if ( class_exists( 'WCML\Orders\Helper' ) ) {
+				// Get the order currency using WCML helper.
+				$order_currency = \WCML\Orders\Helper::getCurrency( $order_id );
+				
+				if ( $order_currency && $order_currency !== $user_currency ) {
+					$user_currency = $order_currency;
+				} 
+			}
+			
+			// Get currency details from WCML settings.
+			if ( $woocommerce_wpml && isset( $woocommerce_wpml->multi_currency ) ) {
+				$currency_details = $woocommerce_wpml->multi_currency->get_currency_details_by_code( $user_currency );
+				
+				if ( $currency_details ) {
+					$currency_pos = isset( $currency_details['position'] ) ? $currency_details['position'] : $currency_pos;
+					$decimal = isset( $currency_details['num_decimals'] ) ? $currency_details['num_decimals'] : $decimal;
+
+					$wc_currency_symbol = isset( $symbols[ $user_currency ] ) ? $symbols[ $user_currency ] : $user_currency;
+				}
 			}
 		}
 
@@ -2369,7 +2428,7 @@ class Wf_Woocommerce_Packing_List_Admin {
 		        	if("" !== trim($_POST['wt_pklist_new_custom_field_title']) && "" !== trim($_POST['wt_pklist_new_custom_field_key'])) // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		        	{
 		        		$custom_field_type=sanitize_text_field(wp_unslash($_POST['wt_pklist_custom_field_type'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		        		if("order_meta" === $custom_field_type)
+		        		if("order_meta" === $custom_field_type || "product_meta" === $custom_field_type)
 		        		{
 		        			$module_base = (isset($_POST['wt_pklist_settings_base']) ? sanitize_text_field(wp_unslash($_POST['wt_pklist_settings_base'])) : 'main'); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 							$module_id = ("main" === $module_base ? '' : Wf_Woocommerce_Packing_List::get_module_id($module_base));
@@ -2379,71 +2438,76 @@ class Wf_Woocommerce_Packing_List_Admin {
 		        					'list'=>'wf_additional_data_fields',
 		        					'selected'=>'wf_'.$module_base.'_contactno_email',
 		        				),
+
+								'product_meta'=>array(
+		        					'list'=>'wf_product_meta_fields',
+		        					'selected'=>'wf_'.$module_base.'_product_meta_fields',
+		        				),
 		        			);
 
 		        			/* form input */
-		        			$new_meta_key=sanitize_text_field(wp_unslash($_POST['wt_pklist_new_custom_field_key'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-        					$new_meta_vl=sanitize_text_field(wp_unslash($_POST['wt_pklist_new_custom_field_title'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.MissingUnslash,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+                            $new_meta_key=sanitize_text_field(wp_unslash($_POST['wt_pklist_new_custom_field_key'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+                            $new_meta_vl=sanitize_text_field(wp_unslash($_POST['wt_pklist_new_custom_field_title'])); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 
-        					/* option key names for full list, selected list */
-        					$list_field=$field_config[$custom_field_type]['list'];
-        					$val_field=$field_config[$custom_field_type]['selected'];
-        					
-        					/* list of user created items */
-        					$user_created=Wf_Woocommerce_Packing_List::get_option($list_field); //this is plugin main setting so no need to specify module base
+                            /* option key names for full list, selected list */
+                            $list_field=$field_config[$custom_field_type]['list'];
+                            $val_field=$field_config[$custom_field_type]['selected'];
+                            
+                            /* list of user created items */
+                            $user_created=Wf_Woocommerce_Packing_List::get_option($list_field); //this is plugin main setting so no need to specify module base
 
-        					/* updating new item to user created list */
-        					$old_meta_key = "";
-        					$old_meta_key_label = "";
-        					if(!empty($user_created) && is_array($user_created)){
-        						$old_meta_key = function_exists('array_key_first') ? array_key_first($user_created): key( array_slice( $user_created, 0, 1, true ) );
-								if (null === $old_meta_key) {
-								    $old_meta_key = ""; // An error should be handled here
-								} else {
-								    $old_meta_key_label = $user_created[$old_meta_key];
-								}
-        					}
+                            /* updating new item to user created list */
+                            $old_meta_key = "";
+                            $old_meta_key_label = "";
+                            if(!empty($user_created) && is_array($user_created)){
+                                $old_meta_key = function_exists('array_key_first') ? array_key_first($user_created): key( array_slice( $user_created, 0, 1, true ) );
+                                if (null === $old_meta_key) {
+                                    $old_meta_key = ""; // An error should be handled here
+                                } else {
+                                    $old_meta_key_label = $user_created[$old_meta_key];
+                                }
+                            }
 
-        					$user_created = array();
-        					$action=(isset($user_created[$new_meta_key]) ? 'edit' : 'add');
-				            
-				            $can_add_item=true;
-        					if("edit" === $action && $add_only)
-        					{
-        						$can_add_item=false;
-        					}
+                            $user_created = array();
+                            $action=(isset($user_created[$new_meta_key]) ? 'edit' : 'add');
+                            
+                            $can_add_item=true;
+                            if("edit" === $action && $add_only)
+                            {
+                                $can_add_item=false;
+                            }
 
-        					if($can_add_item)
-        					{	
+                            if($can_add_item)
+                            {   
 
-				            	$user_created[$new_meta_key] = $new_meta_vl;
-				            	Wf_Woocommerce_Packing_List::update_option($list_field, $user_created);
-				            }
+                                $user_created[$new_meta_key] = $new_meta_vl;
+                                Wf_Woocommerce_Packing_List::update_option($list_field, $user_created);
+                            }
 
-				            if(!$add_only)
-				            {
-					            $vl=Wf_Woocommerce_Packing_List::get_option($val_field, $module_id);
-					            $user_selected_arr =("" !== $vl && is_array($vl) ? $vl : array());			            
+                            if(!$add_only)
+                            {
+                                $vl=Wf_Woocommerce_Packing_List::get_option($val_field, $module_id);
+                                $user_selected_arr =("" !== $vl && is_array($vl) ? $vl : array());                        
 
-					            if(!in_array($new_meta_key, $user_selected_arr)) 
-					            {
-					                $user_selected_arr[] = $new_meta_key;
-					                Wf_Woocommerce_Packing_List::update_option($val_field, $user_selected_arr, $module_id);			                
-					            }
-					        }
+                                if(!in_array($new_meta_key, $user_selected_arr)) 
+                                {
+                                    $user_selected_arr[] = $new_meta_key;
+                                    Wf_Woocommerce_Packing_List::update_option($val_field, $user_selected_arr, $module_id);                         
+                                }
+                            }
 
-					        if($can_add_item)
-					        {
-					            $new_meta_key_display=Wf_Woocommerce_Packing_List::get_display_key($new_meta_key);
+                            if($can_add_item)
+                            {
+                                $new_meta_key_display=Wf_Woocommerce_Packing_List::get_display_key($new_meta_key);
 
-					            $dc_slug=self::sanitize_css_class_name($new_meta_key_display); /* This is for Dynamic customizer */
+                                $dc_slug=Wf_Woocommerce_Packing_List_Admin::sanitize_css_class_name($new_meta_key_display); /* This is for Dynamic customizer */
 
-					            $out=array('key'=>$new_meta_key, 'val'=>$new_meta_vl.$new_meta_key_display, 'dc_slug'=>$dc_slug, 'success'=>true, 'action'=>$action, 'old_meta_key' => $old_meta_key, 'old_meta_key_label' => $old_meta_key_label, 'new_meta_label' => $new_meta_vl);
-					        }else
-					        {
-					        	$out['msg']=__('Item with same meta key already exists', 'print-invoices-packing-slip-labels-for-woocommerce');
-					        }
-		        		}
+                                $out=array('key'=>$new_meta_key, 'val'=>$new_meta_vl.$new_meta_key_display, 'dc_slug'=>$dc_slug, 'success'=>true, 'action'=>$action, 'old_meta_key' => $old_meta_key, 'old_meta_key_label' => $old_meta_key_label, 'new_meta_label' => $new_meta_vl);
+                            }else
+                            {
+                                $out['msg']=__('Item with same meta key already exists', 'print-invoices-packing-slip-labels-for-woocommerce');
+                            }
+		        		} 
 
 		        	}else
 		        	{
@@ -2477,6 +2541,22 @@ class Wf_Woocommerce_Packing_List_Admin {
     	}
         return $order_meta_query;
     }
+	public static function product_meta_dropdown_list(){
+		$product_meta_query = array();
+		if(isset($_GET['page'])){ // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			if("wf_woocommerce_packing_list_invoice" === $_GET['page']){ // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				global $wpdb;
+				$product_meta_selected_list = Wf_Woocommerce_Packing_List::get_option('wf_product_meta_fields');
+				$first_meta_key = function_exists('array_key_first') ? array_key_first($product_meta_selected_list): key( array_slice( $product_meta_selected_list, 0, 1, true ) );
+				$user_added_arr = array();
+				if (null !== $first_meta_key) {
+					$user_added_arr[] = array('label' => $first_meta_key);
+				}
+				// $product_meta_query = $user_added_arr;
+			}
+		}
+		return $product_meta_query;
+	}
 
     /**
      * @since 3.0.2
@@ -5166,5 +5246,25 @@ class Wf_Woocommerce_Packing_List_Admin {
 		}
 	
 		return $actions;
+	}
+
+	/**
+	 * AJAX handler to hide newsletter banner permanently
+	 */
+	public function wt_hide_newsletter_banner() {
+		// Check if user has admin capabilities
+		if (!current_user_can('manage_options')) {
+			wp_die('Insufficient permissions');
+		}
+		
+		// Verify nonce
+		if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), WF_PKLIST_PLUGIN_NAME)) {
+			wp_die('Security check failed');
+		}
+		
+		// Store flag in options table to hide newsletter banner
+		update_option('wt_newsletter_banner_hidden', true);
+		
+		wp_send_json_success('Newsletter banner hidden permanently');
 	}
 }
